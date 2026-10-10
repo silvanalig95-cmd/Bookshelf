@@ -1,0 +1,25 @@
+# Lesekompass in Docker – läuft unabhängig neben anderen Containern (z. B. Olympus).
+#   docker compose -f deploy/docker-compose.yml up -d --build
+# Einstellungen (Login, optional Claude-Schlüssel): deploy/lesekompass.env (Vorlage: lesekompass.env.example)
+# Updates kommen danach von selbst aus GitHub – kein Neubauen nötig.
+name: lesekompass
+services:
+  lesekompass:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: lesekompass
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: lesekompass.env
+        required: false
+    environment:
+      LESEKOMPASS_HOST: 0.0.0.0
+      LESEKOMPASS_PORT: "8080"
+    ports:
+      - "8080:8080"      # http://localhost:8080/ – ist 8080 belegt, z. B. "8081:8080" eintragen
+    volumes:
+      - lesekompass-app:/srv/lesekompass   # heruntergeladene Versionen (darf gelöscht werden, lädt neu)
+volumes:
+  lesekompass-app:

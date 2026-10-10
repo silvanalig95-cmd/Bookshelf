@@ -1,0 +1,10 @@
+# Windows-Batch-Dateien brauchen CRLF; alles, was im Linux-Container läuft, muss LF bleiben
+# (ein verirrtes CR bricht "#!/usr/bin/env bash"), auch wenn Git unter Windows sonst umwandeln würde.
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+*.sh       text eol=lf
+*.command  text eol=lf
+Dockerfile text eol=lf
+*.example  text eol=lf
+*.yml      text eol=lf
+*.ts       text eol=lf

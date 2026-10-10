@@ -40,6 +40,8 @@ Der Browser öffnet sich mit **http://localhost:4173**. Fertig.
 
 Ohne Terminal: Doppelklick auf **`Lesekompass-starten.command`** (macOS) bzw. **`Lesekompass-starten.bat`** (Windows) – das Skript installiert beim ersten Mal alles Nötige und startet die App.
 
+**Dauerhaft in Docker Desktop (neben Olympus):** siehe **[deploy/DOCKER.md](deploy/DOCKER.md)** – Doppelklick auf `docker-starten.bat`, danach läuft der Lesekompass unter <http://localhost:8080/>, ist im Heimnetz erreichbar und aktualisiert sich selbst, sobald eine neue Version auf GitHub liegt.
+
 > `npm start` baut die App und startet einen kleinen lokalen Server. Der wird für zwei Dinge gebraucht: das direkte Verbinden mit Goodreads und – falls du willst – einen Claude-Schlüssel, der nie im Browser landet.
 
 ---
@@ -87,6 +89,17 @@ Ergänzt deutsche Klappentexte, E-Book-Preise und Titel, die Open Library nicht 
 
 ---
 
+## Docker (empfohlen für den Dauerbetrieb)
+
+Der Container baut die App, startet den Server (`server/server.ts`) und prüft jede Minute, ob es auf GitHub eine neue Version gibt. Neue Versionen werden neben der laufenden gebaut, getestet (Typprüfung, Unit-Tests, Selbsttest) und erst dann umgeschaltet; meldet sich der Server danach nicht gesund, kommt die vorherige Version automatisch zurück. Offene Seiten zeigen dann „Neu laden“.
+
+```bash
+cp deploy/lesekompass.env.example deploy/lesekompass.env   # Login & optional Claude-Schlüssel eintragen
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+Schritt-für-Schritt für Windows: **[deploy/DOCKER.md](deploy/DOCKER.md)**.
+
 ## Online stellen (optional)
 
 Lesekompass lässt sich auch als statische Website betreiben, z. B. über **GitHub Pages**:
@@ -120,7 +133,9 @@ npm run build      # Produktions-Build nach dist/
 **Technik:** React + TypeScript + Vite, Zustand (Zustände, Bibliothek in IndexedDB), Papa Parse (CSV), Anthropic SDK. Keine UI-Bibliothek – eigenes CSS mit hellem „Papier“- und dunklem „Nachtbibliothek“-Design.
 
 ```
-server/localApi.ts      Lokale API im Vite-Server: Goodreads-RSS-Abruf, Claude-Proxy
+server/localApi.ts      Lokale API: Goodreads-RSS-Abruf, Claude-Proxy
+server/server.ts        Produktions-Server (Docker): App ausliefern, Login, /healthz, Selbsttest
+deploy/                 Docker-Rezept und Update-Automatik (run.sh, update.sh)
 src/lib/openLibrary.ts  Open-Library-Anbindung (Suche, Werke, Ausgaben, Themen)
 src/lib/discovery.ts    Entdecken-Suche: Wunsch verstehen, Anfragen planen, bewerten
 src/lib/profile.ts      Geschmacksprofil (TF-IDF über Themen, Bewertungen, Aktualität)

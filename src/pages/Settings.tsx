@@ -190,10 +190,10 @@ export default function Settings() {
           <span className="notice-icon">{ai.available ? '✅' : 'ℹ️'}</span>
           <span className="small">
             {server?.ai
-              ? 'Der lokale Server hat einen Schlüssel (ANTHROPIC_API_KEY in .env) – der Schlüssel bleibt auf dem Server. Ein Browser-Schlüssel ist nicht nötig.'
+              ? 'Der Server hat einen Claude-Schlüssel (ANTHROPIC_API_KEY) – er bleibt auf dem Server. Ein Browser-Schlüssel ist nicht nötig.'
               : ai.available
                 ? 'Aktiv mit dem Schlüssel aus diesem Browser.'
-                : 'Noch nicht aktiv. Am sichersten: Schlüssel als ANTHROPIC_API_KEY in die Datei .env schreiben und den Server neu starten. Alternativ hier eintragen (wird nur in diesem Browser gespeichert).'}
+                : 'Noch nicht aktiv. Am sichersten liegt der Schlüssel auf dem Server: bei Docker als ANTHROPIC_API_KEY (zusammen mit einem Login) in deploy/lesekompass.env, sonst in der Datei .env – danach neu starten. Alternativ hier eintragen (wird nur in diesem Browser gespeichert).'}
           </span>
         </div>
         {!server?.ai && (
@@ -258,7 +258,7 @@ export default function Settings() {
           {server === undefined
             ? 'Prüfe …'
             : server.goodreads
-              ? '✅ Läuft – Goodreads-Profil-Import und Server-Schlüssel für Claude sind verfügbar.'
+              ? `✅ Läuft – Goodreads-Profil-Import ist verfügbar${server.ai ? ', ebenso der Claude-Schlüssel des Servers' : ''}. Version ${__VERSION__}, Build ${__BUILD__.slice(0, 7)}.`
               : 'Nicht erreichbar (statische Installation). Goodreads geht dann per CSV-Export, Claude per Browser-Schlüssel.'}
         </p>
       </section>

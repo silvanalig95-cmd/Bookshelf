@@ -1,5 +1,5 @@
 /**
- * Kleine lokale API, die im Vite-Dev- und Preview-Server läuft.
+ * Kleine lokale API – läuft im Vite-Dev-/Preview-Server und im Docker-Server (server.ts).
  *
  * - /api/status              → welche Server-Funktionen verfügbar sind
  * - /api/goodreads/rss       → holt den öffentlichen RSS-Feed eines Goodreads-Regals
@@ -16,9 +16,14 @@ import type { Plugin } from 'vite';
 
 type Next = (err?: unknown) => void;
 
-interface LocalApiOptions {
+export interface LocalApiOptions {
   anthropicApiKey?: string;
   allowRemote?: boolean;
+  /**
+   * Darf diese Anfrage den Claude-Schlüssel des Servers nutzen? Standard: nur vom
+   * eigenen Computer. Der Docker-Server erlaubt es nur angemeldeten Personen.
+   */
+  canUseAi?: (req: IncomingMessage) => boolean;
 }
 
 const GOODREADS_SHELF = /^[a-z0-9_\-#%]{1,64}$/i;
@@ -30,7 +35,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-function isLocalRequest(req: IncomingMessage): boolean {
+export function isLocalRequest(req: IncomingMessage): boolean {
   const addr = req.socket.remoteAddress ?? '';
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
 }
@@ -74,7 +79,25 @@ export async function fetchGoodreadsRss(params: URLSearchParams): Promise<{ stat
   return { status: upstream.status, body };
 }
 
+/**
+ * Schutz vor fremden Webseiten: Anfragen an den Claude-Proxy müssen von dieser App selbst
+ * kommen (gleiche Herkunft) und JSON senden – das erzwingt bei fremden Seiten einen
+ * CORS-Vorabcheck, den dieser Server nie beantwortet.
+ */
+export function isSameOriginJson(req: IncomingMessage): boolean {
+  const type = String(req.headers['content-type'] ?? '');
+  if (!type.toLowerCase().startsWith('application/json')) return false;
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;
+  }
+}
+
 export function createLocalApiHandler(options: LocalApiOptions) {
+  const canUseAi = (req: IncomingMessage) => Boolean(options.anthropicApiKey) && (options.canUseAi ? options.canUseAi(req) : isLocalRequest(req));
   return async function handler(req: IncomingMessage, res: ServerResponse, next: Next) {
     const rawUrl = req.url ?? '';
     if (!rawUrl.startsWith('/api/')) return next();
@@ -86,7 +109,7 @@ export function createLocalApiHandler(options: LocalApiOptions) {
 
     try {
       if (url.pathname === '/api/status') {
-        return sendJson(res, 200, { goodreads: true, ai: Boolean(options.anthropicApiKey) });
+        return sendJson(res, 200, { goodreads: true, ai: canUseAi(req) });
       }
 
       if (url.pathname === '/api/goodreads/rss') {
@@ -100,6 +123,12 @@ export function createLocalApiHandler(options: LocalApiOptions) {
       if (url.pathname.startsWith('/api/anthropic/')) {
         if (!options.anthropicApiKey) {
           return sendJson(res, 503, { error: 'ANTHROPIC_API_KEY ist auf dem Server nicht gesetzt.' });
+        }
+        if (!canUseAi(req)) {
+          return sendJson(res, 403, { error: 'Den Claude-Schlüssel des Servers dürfen nur angemeldete Personen nutzen (LESEKOMPASS_AUTH setzen).' });
+        }
+        if (!isSameOriginJson(req)) {
+          return sendJson(res, 403, { error: 'Anfrage von fremder Herkunft abgelehnt.' });
         }
         const path = url.pathname.slice('/api/anthropic'.length);
         if (req.method !== 'POST' || !/^\/v1\/messages(\/count_tokens)?$/.test(path)) {

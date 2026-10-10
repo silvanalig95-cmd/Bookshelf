@@ -20,3 +20,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Docker-Image bauen (inkl. Tests im Container)
+        run: docker build -f deploy/Dockerfile -t lesekompass .
+      - name: Container starten und Selbsttest
+        run: |
+          docker run --rm --entrypoint node lesekompass /opt/lesekompass-seed/server/server.ts --selftest

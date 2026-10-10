@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Loading, Toasts } from './components/Feedback';
 import { Onboarding } from './components/Onboarding';
 import { RatingDialog } from './components/RatingDialog';
+import { AppFooter, UpdateBanner } from './components/UpdateBanner';
 import { useSettings } from './store/settings';
 import { useWishlist } from './store/wishlist';
 import Home from './pages/Home';
@@ -166,6 +167,7 @@ export default function App() {
         </Suspense>
         </ErrorBoundary>
       </main>
+      <AppFooter />
 
       <nav className="bottom-nav" aria-label="Navigation">
         {BOTTOM_NAV.map((n) => (
@@ -176,6 +178,7 @@ export default function App() {
         ))}
       </nav>
 
+      <UpdateBanner />
       <RatingDialog />
       <Onboarding />
       <Toasts />

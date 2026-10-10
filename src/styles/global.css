@@ -207,7 +207,7 @@ textarea {
   width: 100%;
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: 28px 24px 120px;
+  padding: 28px 24px 48px;
 }
 .page-head {
   margin-bottom: 22px;
@@ -387,7 +387,7 @@ textarea {
     display: none;
   }
   .main {
-    padding: 20px 16px 110px;
+    padding: 20px 16px 24px;
   }
   .app-header-inner {
     padding: 0 16px;
@@ -2385,5 +2385,38 @@ kbd {
   }
   .offers {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- Update-Hinweis & Fusszeile ---------- */
+
+.update-banner {
+  position: fixed;
+  top: calc(var(--header-h) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  box-shadow: var(--shadow-lg);
+  font-weight: 600;
+  font-size: 0.9rem;
+  animation: toastIn 0.3s ease;
+  max-width: calc(100vw - 32px);
+}
+.app-footer {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--muted);
+  padding: 0 16px 28px;
+}
+@media (max-width: 860px) {
+  .app-footer {
+    padding-bottom: 96px;
   }
 }
