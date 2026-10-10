@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" >
+  <channel>
+    <title>Otis 's bookshelf: read</title>
+    <item>
+      <guid><![CDATA[https://www.goodreads.com/review/show/3634418775?utm_medium=api&utm_source=rss]]></guid>
+      <title>The Long Ships</title>
+      <link><![CDATA[https://www.goodreads.com/review/show/3634418775?utm_medium=api&utm_source=rss]]></link>
+      <book_id>10081041</book_id>
+      <book_image_url><![CDATA[https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1328302275l/10081041._SX50_.jpg]]></book_image_url>
+      <book_medium_image_url><![CDATA[https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1328302275l/10081041._SX98_.jpg]]></book_medium_image_url>
+      <book_large_image_url><![CDATA[https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1328302275l/10081041.jpg]]></book_large_image_url>
+      <book_description><![CDATA[Frans Gunnar Bengtsson’s <i>The Long Ships</i> resurrects the world of the Vikings.<br />--nyrb.com]]></book_description>
+      <book id="10081041">
+        <num_pages>528</num_pages>
+      </book>
+      <author_name>Frans G. Bengtsson</author_name>
+      <isbn>159017416X</isbn>
+      <user_name>Otis </user_name>
+      <user_rating>5</user_rating>
+      <user_read_at><![CDATA[Tue, 18 Aug 2026 00:00:00 +0000]]></user_read_at>
+      <user_date_added><![CDATA[Fri, 11 Sep 2026 10:07:58 -0700]]></user_date_added>
+      <user_shelves><![CDATA[adventure, norway, historical-fiction]]></user_shelves>
+      <user_review><![CDATA[Great.]]></user_review>
+      <average_rating>4.38</average_rating>
+      <book_published>1941</book_published>
+    </item>
+    <item>
+      <title>Mystery Book</title>
+      <book_id>42</book_id>
+      <book_large_image_url><![CDATA[https://s.gr-assets.com/assets/nophoto/book/111x148.png]]></book_large_image_url>
+      <book id="42"><num_pages></num_pages></book>
+      <author_name>A. Writer</author_name>
+      <isbn></isbn>
+      <user_rating>0</user_rating>
+      <user_read_at></user_read_at>
+      <user_date_added><![CDATA[Mon, 01 Jan 2024 10:00:00 +0000]]></user_date_added>
+      <user_shelves></user_shelves>
+      <average_rating>3.9</average_rating>
+      <book_published></book_published>
+    </item>
+  </channel>
+</rss>
