@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useSync } from '../store/sync';
 
 /**
  * Fragt beim Server (/healthz) regelmässig nach, ob inzwischen eine neuere Version läuft –
@@ -42,10 +44,33 @@ export function UpdateBanner() {
   );
 }
 
+function SyncBadge() {
+  const phase = useSync((s) => s.phase);
+  const pending = useSync((s) => s.pending);
+  const label =
+    phase === 'ok' || phase === 'syncing'
+      ? '☁️ Geräte abgeglichen'
+      : phase === 'offline'
+        ? `📴 Server nicht erreichbar${pending ? ` – ${pending} Änderung${pending === 1 ? '' : 'en'} warten` : ''}`
+        : phase === 'error'
+          ? '⚠️ Abgleich gestört'
+          : undefined;
+  if (!label) return null;
+  return (
+    <>
+      {' · '}
+      <Link to="/einstellungen#abgleich" className="app-footer-link">
+        {label}
+      </Link>
+    </>
+  );
+}
+
 export function AppFooter() {
   return (
     <footer className="app-footer">
-      Lesekompass {__VERSION__} · Build {__BUILD__.slice(0, 7)} · Daten: Open Library, Wikipedia, Goodreads
+      Lesekompass {__VERSION__} · Build {__BUILD__.slice(0, 7)}
+      <SyncBadge /> · Daten: Open Library, Wikipedia, Goodreads
     </footer>
   );
 }

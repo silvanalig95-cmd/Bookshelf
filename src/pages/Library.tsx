@@ -15,6 +15,8 @@ import { useEnrichment } from '../store/enrichment';
 import { useLibrary } from '../store/library';
 import { useSettings } from '../store/settings';
 import { useSignals } from '../store/signals';
+import { useSync } from '../store/sync';
+import { announceBulkChange } from '../store/syncIntent';
 import { toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
 
@@ -379,6 +381,8 @@ function ImportPanel() {
   const settings = useSettings();
   const openRating = useUi((s) => s.openRating);
   const [server, setServer] = useState<boolean | undefined>();
+  const syncPhase = useSync((s) => s.phase);
+  const synced = syncPhase === 'ok' || syncPhase === 'syncing' || syncPhase === 'offline' || syncPhase === 'error';
   const [profileInput, setProfileInput] = useState(settings.goodreadsUserId);
   const [shelves, setShelves] = useState<Shelf[]>(['read', 'currently-reading', 'to-read']);
   const [rssState, setRssState] = useState<{ busy: boolean; message?: string; error?: string }>({ busy: false });
@@ -474,6 +478,7 @@ function ImportPanel() {
       };
       if (parsed.app !== 'lesekompass' || !parsed.data) throw new Error('Das ist keine Lesekompass-Sicherung.');
       const d = parsed.data;
+      announceBulkChange(); // Zurückspielen ersetzt den Stand – auch auf den anderen Geräten
       if (d.library?.entries) useLibrary.setState({ entries: d.library.entries });
       if (d.wishlist?.items) useWishlist.setState({ items: d.wishlist.items as never });
       if (d.signals?.signals) useSignals.setState({ signals: d.signals.signals as never });
@@ -614,7 +619,12 @@ function ImportPanel() {
         <div className="card-title">
           <h3>💾 Sicherung</h3>
         </div>
-        <p className="small">Bibliothek, Merkliste und Swipe-Geschmack als Datei sichern – z. B. um auf ein anderes Gerät umzuziehen. API-Schlüssel werden nicht exportiert.</p>
+        <p className="small">
+          {synced
+            ? 'Dank Geräte-Abgleich haben alle deine Geräte denselben Stand – die Datei ist eine zusätzliche Sicherung. Zurückspielen ersetzt den Stand auf allen Geräten.'
+            : 'Bibliothek, Merkliste und Swipe-Geschmack als Datei sichern – z. B. um auf ein anderes Gerät umzuziehen.'}{' '}
+          API-Schlüssel werden nicht exportiert.
+        </p>
         <div className="btn-row">
           <button className="btn" onClick={exportBackup}>
             ⬇️ Sicherung herunterladen
@@ -625,20 +635,21 @@ function ImportPanel() {
           <input ref={backupRef} type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && importBackup(e.target.files[0])} />
         </div>
         <hr className="divider" />
-        <DangerZone onClearLibrary={clearLibrary} />
+        <DangerZone onClearLibrary={clearLibrary} everywhere={synced} />
       </div>
     </div>
   );
 }
 
-function DangerZone({ onClearLibrary }: { onClearLibrary: () => void }) {
+function DangerZone({ onClearLibrary, everywhere }: { onClearLibrary: () => void; everywhere: boolean }) {
   const clearSignals = useSignals((s) => s.clear);
+  const where = everywhere ? ' Das gilt für alle abgeglichenen Geräte.' : '';
   return (
     <div className="btn-row">
       <button
         className="btn btn-sm btn-ghost"
         onClick={() => {
-          if (confirm('Alle importierten Bücher löschen? Die Merkliste bleibt erhalten.')) {
+          if (confirm(`Alle importierten Bücher löschen? Die Merkliste bleibt erhalten.${where}`)) {
             onClearLibrary();
             toast('Bibliothek geleert');
           }
@@ -649,7 +660,7 @@ function DangerZone({ onClearLibrary }: { onClearLibrary: () => void }) {
       <button
         className="btn btn-sm btn-ghost"
         onClick={() => {
-          if (confirm('Swipe- und Glücksrad-Geschmack zurücksetzen?')) {
+          if (confirm(`Swipe- und Glücksrad-Geschmack zurücksetzen?${where}`)) {
             clearSignals();
             toast('Geschmackssignale zurückgesetzt');
           }

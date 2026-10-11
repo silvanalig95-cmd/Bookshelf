@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Book, WishlistItem } from '../lib/types';
+import { announceBulkChange } from './syncIntent';
 
 interface WishlistState {
   items: Record<string, WishlistItem>;
@@ -47,7 +48,10 @@ export const useWishlist = create<WishlistState>()(
         const item = get().items[id];
         if (item) set({ items: { ...get().items, [id]: { ...item, note } } });
       },
-      clear: () => set({ items: {} }),
+      clear: () => {
+        announceBulkChange();
+        set({ items: {} });
+      },
     }),
     { name: 'lesekompass.wishlist', version: 1 },
   ),

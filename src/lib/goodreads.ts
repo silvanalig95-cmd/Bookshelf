@@ -183,13 +183,23 @@ export async function fetchGoodreadsShelves(
   return all;
 }
 
-export async function localApiStatus(): Promise<{ goodreads: boolean; ai: boolean }> {
+export interface LocalApiStatus {
+  goodreads: boolean;
+  ai: boolean;
+  /** Geräte-Synchronisation verfügbar. */
+  sync: boolean;
+  /** Angemeldeter Name (null = ohne Login). */
+  user: string | null;
+}
+
+export async function localApiStatus(): Promise<LocalApiStatus> {
+  const none: LocalApiStatus = { goodreads: false, ai: false, sync: false, user: null };
   try {
-    const res = await fetch('./api/status', { cache: 'no-store' });
-    if (!res.ok || !res.headers.get('content-type')?.includes('json')) return { goodreads: false, ai: false };
-    return (await res.json()) as { goodreads: boolean; ai: boolean };
+    const res = await fetch('./api/status', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+    if (!res.ok || !res.headers.get('content-type')?.includes('json')) return none;
+    return { ...none, ...((await res.json()) as Partial<LocalApiStatus>) };
   } catch {
-    return { goodreads: false, ai: false };
+    return none;
   }
 }
 

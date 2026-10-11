@@ -10,3 +10,5 @@ deploy/*.env
 coverage
 test-results
 playwright-report
+daten
+daten-sicherung

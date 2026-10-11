@@ -40,4 +40,10 @@ describe('Docker-Rezept', () => {
       expect(/^[\x00-\x7F]*$/.test(readFileSync(f, 'utf8')), f).toBe(true);
     }
   });
+
+  it('Server-Dateien laufen in Node ohne Übersetzungsschritt', () => {
+    // Node entfernt nur Typen – Parameter-Eigenschaften, enums & Co. fallen erst hier auf, nicht in Vitest
+    const out = execFileSync(process.execPath, ['--input-type=module', '-e', "await import('./server/server.ts'); console.log('ok')"], { encoding: 'utf8' });
+    expect(out.trim()).toBe('ok');
+  });
 });

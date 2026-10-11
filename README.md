@@ -21,7 +21,7 @@ Lesekompass ist eine Web-App, mit der du auf viele verschiedene Arten neue Büch
 | ✨ **KI-Bibliothekar** *(optional)* | Chat mit Claude, der deine gelesenen Bücher kennt. Empfehlungen erscheinen als anklickbare Buchkarten. Auch in der Suche: „✨ KI fragen“. |
 | 📚 **Bibliothek & Lese-DNA** | Goodreads-Import, Merkliste, Bewertungen, Statistiken (Bücher pro Jahr, Sterne, Genres, Autor:innen, Jahrzehnte, Themen, Orte) und eine Lesepersönlichkeit. |
 
-Alle deine Daten (Bibliothek, Merkliste, Einstellungen) bleiben **in deinem Browser**. Es gibt kein Konto und keinen fremden Server.
+Alle deine Daten (Bibliothek, Merkliste, Einstellungen) bleiben **bei dir**: im Browser – oder, mit der Docker-Installation, auf deinem eigenen Server, damit Handy, Tablet und PC denselben Stand haben. Es gibt kein Konto bei Dritten.
 
 ---
 
@@ -91,7 +91,7 @@ Ergänzt deutsche Klappentexte, E-Book-Preise und Titel, die Open Library nicht 
 
 ## Docker (empfohlen für den Dauerbetrieb)
 
-Der Container baut die App, startet den Server (`server/server.ts`) und prüft jede Minute, ob es auf GitHub eine neue Version gibt. Neue Versionen werden neben der laufenden gebaut, getestet (Typprüfung, Unit-Tests, Selbsttest) und erst dann umgeschaltet; meldet sich der Server danach nicht gesund, kommt die vorherige Version automatisch zurück. Offene Seiten zeigen dann „Neu laden“.
+Der Container baut die App, startet den Server (`server/server.ts`) und prüft jede Minute, ob es auf GitHub eine neue Version gibt. Bibliothek, Merkliste, Swipe-Geschmack und Einstellungen werden dabei **zwischen allen Geräten abgeglichen** (pro Login, mit täglicher Sicherung im Docker-Volume). Neue Versionen werden neben der laufenden gebaut, getestet (Typprüfung, Unit-Tests, Selbsttest) und erst dann umgeschaltet; meldet sich der Server danach nicht gesund, kommt die vorherige Version automatisch zurück. Offene Seiten zeigen dann „Neu laden“.
 
 ```bash
 cp deploy/lesekompass.env.example deploy/lesekompass.env   # Login & optional Claude-Schlüssel eintragen
@@ -133,8 +133,10 @@ npm run build      # Produktions-Build nach dist/
 **Technik:** React + TypeScript + Vite, Zustand (Zustände, Bibliothek in IndexedDB), Papa Parse (CSV), Anthropic SDK. Keine UI-Bibliothek – eigenes CSS mit hellem „Papier“- und dunklem „Nachtbibliothek“-Design.
 
 ```
-server/localApi.ts      Lokale API: Goodreads-RSS-Abruf, Claude-Proxy
+server/localApi.ts      Lokale API: Goodreads-RSS-Abruf, Claude-Proxy, Geräte-Abgleich
 server/server.ts        Produktions-Server (Docker): App ausliefern, Login, /healthz, Selbsttest
+server/syncStore.ts     Datenablage für den Geräte-Abgleich (pro Login, jüngste Änderung gewinnt)
+src/lib/syncEngine.ts   Abgleich im Browser: Änderungen erkennen, übertragen, übernehmen
 deploy/                 Docker-Rezept und Update-Automatik (run.sh, update.sh)
 src/lib/openLibrary.ts  Open-Library-Anbindung (Suche, Werke, Ausgaben, Themen)
 src/lib/discovery.ts    Entdecken-Suche: Wunsch verstehen, Anfragen planen, bewerten

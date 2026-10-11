@@ -6,13 +6,17 @@
  *                              (Goodreads erlaubt keinen direkten Browser-Zugriff/CORS)
  * - /api/anthropic/v1/...    → leitet Claude-Anfragen weiter und fügt den Schlüssel
  *                              aus ANTHROPIC_API_KEY hinzu, damit er nie im Browser landet
+ * - /api/sync                → gleicht Bibliothek, Merkliste & Co. zwischen Geräten ab
+ *                              (nur wenn ein Datenordner eingerichtet ist, siehe syncStore.ts)
  *
  * Auf einer rein statischen Installation (z. B. GitHub Pages) gibt es diese
  * Endpunkte nicht – die App erkennt das über /api/status und weicht aus.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
+import { gzipSync } from 'node:zlib';
 import type { Plugin } from 'vite';
+import { SyncInputError, type SyncStore } from './syncStore.ts';
 
 type Next = (err?: unknown) => void;
 
@@ -24,15 +28,28 @@ export interface LocalApiOptions {
    * eigenen Computer. Der Docker-Server erlaubt es nur angemeldeten Personen.
    */
   canUseAi?: (req: IncomingMessage) => boolean;
+  /** Datenablage für die Geräte-Synchronisation; ohne sie gibt es keinen Abgleich. */
+  sync?: SyncStore;
+  /** Angemeldeter Name dieser Anfrage (null = ohne Login). */
+  userOf?: (req: IncomingMessage) => string | null;
 }
+
+class RequestTooLarge extends Error {}
 
 const GOODREADS_SHELF = /^[a-z0-9_\-#%]{1,64}$/i;
 
-function sendJson(res: ServerResponse, status: number, body: unknown) {
+function sendJson(res: ServerResponse, status: number, body: unknown, req?: IncomingMessage) {
   res.statusCode = status;
   res.setHeader('content-type', 'application/json; charset=utf-8');
   res.setHeader('cache-control', 'no-store');
-  res.end(JSON.stringify(body));
+  const text = JSON.stringify(body);
+  if (req && text.length > 8192 && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) {
+    res.setHeader('content-encoding', 'gzip');
+    res.setHeader('vary', 'accept-encoding');
+    res.end(gzipSync(text));
+    return;
+  }
+  res.end(text);
 }
 
 export function isLocalRequest(req: IncomingMessage): boolean {
@@ -46,7 +63,7 @@ async function readBody(req: IncomingMessage, limit = 2_000_000): Promise<Buffer
   for await (const chunk of req) {
     const buf = typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer);
     size += buf.length;
-    if (size > limit) throw new Error('Anfrage zu gross');
+    if (size > limit) throw new RequestTooLarge('Anfrage zu gross');
     chunks.push(buf);
   }
   return Buffer.concat(chunks);
@@ -98,6 +115,7 @@ export function isSameOriginJson(req: IncomingMessage): boolean {
 
 export function createLocalApiHandler(options: LocalApiOptions) {
   const canUseAi = (req: IncomingMessage) => Boolean(options.anthropicApiKey) && (options.canUseAi ? options.canUseAi(req) : isLocalRequest(req));
+  const userOf = (req: IncomingMessage) => options.userOf?.(req) ?? null;
   return async function handler(req: IncomingMessage, res: ServerResponse, next: Next) {
     const rawUrl = req.url ?? '';
     if (!rawUrl.startsWith('/api/')) return next();
@@ -109,7 +127,27 @@ export function createLocalApiHandler(options: LocalApiOptions) {
 
     try {
       if (url.pathname === '/api/status') {
-        return sendJson(res, 200, { goodreads: true, ai: canUseAi(req) });
+        return sendJson(res, 200, { goodreads: true, ai: canUseAi(req), sync: Boolean(options.sync), user: userOf(req) });
+      }
+
+      if (url.pathname === '/api/sync') {
+        if (!options.sync) return sendJson(res, 404, { error: 'Die Synchronisation ist auf diesem Server nicht eingerichtet.' });
+        if (req.method !== 'POST') return sendJson(res, 405, { error: 'Nur POST' });
+        if (!isSameOriginJson(req)) return sendJson(res, 403, { error: 'Anfrage von fremder Herkunft abgelehnt.' });
+        let input: unknown;
+        try {
+          input = JSON.parse((await readBody(req, 48_000_000)).toString('utf8'));
+        } catch (err) {
+          if (err instanceof RequestTooLarge) return sendJson(res, 413, { error: err.message });
+          return sendJson(res, 400, { error: 'Ungültiges JSON' });
+        }
+        try {
+          const result = options.sync.sync(userOf(req), input);
+          return sendJson(res, result.status, result.body, req);
+        } catch (err) {
+          if (err instanceof SyncInputError) return sendJson(res, 400, { error: err.message });
+          return sendJson(res, 500, { error: `Daten konnten nicht gespeichert werden: ${err instanceof Error ? err.message : String(err)}` });
+        }
       }
 
       if (url.pathname === '/api/goodreads/rss') {

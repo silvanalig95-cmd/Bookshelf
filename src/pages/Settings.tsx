@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { aiAvailability, resetAiStatus, type AiVia } from '../lib/aiStatus';
-import { localApiStatus } from '../lib/goodreads';
+import { localApiStatus, type LocalApiStatus } from '../lib/goodreads';
 import { annasArchiveUrl, ANNAS_ARCHIVE_MIRRORS } from '../lib/shops';
 import type { LanguagePreference, Region } from '../lib/types';
 import { useSettings, type AiModel, type Theme } from '../store/settings';
+import { pullEverything, runSync, setSyncEnabled, useSync } from '../store/sync';
 import { toast } from '../store/ui';
 
 const SHOPS: Record<Region, Array<{ id: string; label: string }>> = {
@@ -33,7 +34,9 @@ const MODELS: Array<{ id: AiModel; label: string; hint: string }> = [
 export default function Settings() {
   const s = useSettings();
   const [customAnnas, setCustomAnnas] = useState(ANNAS_ARCHIVE_MIRRORS.includes(s.annasBase) ? '' : s.annasBase);
-  const [server, setServer] = useState<{ goodreads: boolean; ai: boolean }>();
+  const [server, setServer] = useState<LocalApiStatus>();
+  const syncPhase = useSync((x) => x.phase);
+  const syncing = syncPhase !== 'unavailable' && syncPhase !== 'off' && syncPhase !== 'checking';
   const [ai, setAi] = useState<{ available: boolean; via?: AiVia }>({ available: false });
   const [testState, setTestState] = useState<string>('');
   const [showKey, setShowKey] = useState(false);
@@ -46,7 +49,7 @@ export default function Settings() {
     aiAvailability(s.aiApiKey).then(setAi);
   }, [s.aiApiKey]);
   useEffect(() => {
-    if (window.location.hash.includes('#ki')) document.getElementById('ki')?.scrollIntoView();
+    for (const id of ['ki', 'abgleich']) if (window.location.hash.includes(`#${id}`)) document.getElementById(id)?.scrollIntoView();
   }, []);
 
   const testAi = async () => {
@@ -67,7 +70,11 @@ export default function Settings() {
       <div className="page-head">
         <p className="eyebrow">Einstellungen</p>
         <h1>So, wie du liest</h1>
-        <p>Alle Einstellungen und Schlüssel werden nur in diesem Browser gespeichert.</p>
+        <p>
+          {syncing
+            ? 'Region, Shop, Sprache, Anna’s Archive und KI-Modell gelten auf allen deinen Geräten. Schlüssel und Design bleiben in diesem Browser.'
+            : 'Alle Einstellungen und Schlüssel werden nur in diesem Browser gespeichert.'}
+        </p>
       </div>
 
       <section className="card">
@@ -130,6 +137,8 @@ export default function Settings() {
           </div>
         </div>
       </section>
+
+      <SyncCard />
 
       <section className="card">
         <h3>🗄️ Anna’s Archive</h3>
@@ -258,7 +267,7 @@ export default function Settings() {
           {server === undefined
             ? 'Prüfe …'
             : server.goodreads
-              ? `✅ Läuft – Goodreads-Profil-Import ist verfügbar${server.ai ? ', ebenso der Claude-Schlüssel des Servers' : ''}. Version ${__VERSION__}, Build ${__BUILD__.slice(0, 7)}.`
+              ? `✅ Läuft – Goodreads-Profil-Import ist verfügbar${server.ai ? ', ebenso der Claude-Schlüssel des Servers' : ''}${server.sync ? ' und der Geräte-Abgleich' : ''}. Version ${__VERSION__}, Build ${__BUILD__.slice(0, 7)}.`
               : 'Nicht erreichbar (statische Installation). Goodreads geht dann per CSV-Export, Claude per Browser-Schlüssel.'}
         </p>
       </section>
@@ -287,5 +296,111 @@ export default function Settings() {
         </p>
       </section>
     </div>
+  );
+}
+
+function ago(ts: number): string {
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 45) return 'gerade eben';
+  if (s < 3600) return `vor ${Math.round(s / 60)} Min.`;
+  if (s < 86_400) return `vor ${Math.round(s / 3600)} Std.`;
+  return new Date(ts).toLocaleString('de-CH', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function SyncCard() {
+  const sync = useSync();
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (sync.phase === 'checking') return null;
+  if (sync.phase === 'unavailable') {
+    return (
+      <section className="card" id="abgleich">
+        <h3>☁️ Geräte abgleichen</h3>
+        <p className="small mb-0">
+          Auf dieser Installation nicht verfügbar – Bibliothek und Merkliste bleiben in diesem Browser. Mit dem Docker-Server (siehe <code>deploy/DOCKER.md</code>)
+          haben alle deine Geräte automatisch denselben Stand.
+        </p>
+      </section>
+    );
+  }
+
+  const on = sync.phase !== 'off';
+  const who = sync.user ? (
+    <>
+      für <b>{sync.user}</b>
+    </>
+  ) : (
+    'ohne Login – alle Geräte im Netz teilen sich eine Bibliothek'
+  );
+  const c = sync.counts;
+  const status =
+    sync.phase === 'off'
+      ? { icon: '⏸️', tone: '', text: <>Auf diesem Gerät ausgeschaltet. Änderungen bleiben hier und werden beim Einschalten nachgereicht.</> }
+      : sync.phase === 'offline'
+        ? {
+            icon: '📴',
+            tone: 'rose',
+            text: (
+              <>
+                Server gerade nicht erreichbar.{' '}
+                {sync.pending ? `${sync.pending} Änderung${sync.pending === 1 ? '' : 'en'} werden übertragen, sobald er wieder da ist.` : 'Es geht nichts verloren.'}
+              </>
+            ),
+          }
+        : sync.phase === 'error'
+          ? { icon: '⚠️', tone: 'rose', text: <>Abgleich gestört: {sync.error}</> }
+          : {
+              icon: sync.phase === 'syncing' ? '⏳' : '✅',
+              tone: 'teal',
+              text: (
+                <>
+                  Aktiv {who}
+                  {sync.lastSync ? ` · zuletzt ${ago(sync.lastSync)}` : ''}.
+                </>
+              ),
+            };
+
+  return (
+    <section className="card" id="abgleich">
+      <h3>☁️ Geräte abgleichen</h3>
+      <p className="small">
+        Bibliothek, Bewertungen, Merkliste, Swipe-Geschmack und die Einstellungen oben sind auf allen Geräten gleich, die diesen Lesekompass öffnen – auf dem
+        Handy gemerkt, am PC gefunden. Änderungen gehen sofort raus; offline Gemachtes wird nachgereicht.
+      </p>
+      <div className={`notice ${status.tone}`} style={{ marginBottom: 12 }}>
+        <span className="notice-icon">{status.icon}</span>
+        <span className="small">{status.text}</span>
+      </div>
+      {c && on && (
+        <p className="small muted">
+          Auf dem Server: {c.library} {c.library === 1 ? 'Buch' : 'Bücher'} · {c.wishlist} auf der Merkliste · {c.signals} Swipe-Signal{c.signals === 1 ? '' : 'e'}
+        </p>
+      )}
+      <label className="toggle" style={{ marginBottom: 12 }}>
+        <input type="checkbox" checked={on} onChange={(e) => setSyncEnabled(e.target.checked)} />
+        <span>Dieses Gerät abgleichen</span>
+      </label>
+      {on && (
+        <div className="btn-row">
+          <button className="btn btn-sm" onClick={() => void runSync()} disabled={sync.phase === 'syncing'}>
+            ↻ Jetzt abgleichen
+          </button>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={() => {
+              pullEverything();
+              toast('Hole alles vom Server …');
+            }}
+            disabled={sync.phase === 'syncing'}
+          >
+            Alles neu vom Server holen
+          </button>
+        </div>
+      )}
+    </section>
   );
 }

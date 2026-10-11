@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { idbStorage } from './idbStorage';
 import { bookFingerprint } from '../lib/text';
 import type { Book, LibraryEntry, Shelf } from '../lib/types';
+import { announceBulkChange } from './syncIntent';
 
 interface ImportInfo {
   source: LibraryEntry['source'];
@@ -78,7 +79,10 @@ export const useLibrary = create<LibraryState>()(
         delete entries[id];
         set({ entries });
       },
-      clear: () => set({ entries: {}, lastImport: undefined }),
+      clear: () => {
+        announceBulkChange();
+        set({ entries: {}, lastImport: undefined });
+      },
       addBook: (book, shelf, rating = 0) => {
         const id = book.workKey ? `ol:${book.id}` : `m:${book.id}`;
         const entry: LibraryEntry = {

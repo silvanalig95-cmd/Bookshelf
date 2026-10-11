@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Book, SignalVerdict, TasteSignal } from '../lib/types';
+import { announceBulkChange } from './syncIntent';
 
 interface SignalsState {
   signals: TasteSignal[];
@@ -25,7 +26,10 @@ export const useSignals = create<SignalsState>()(
         const rest = get().signals.filter((s) => s.bookId !== book.id);
         set({ signals: [...rest, signal].slice(-600) });
       },
-      clear: () => set({ signals: [] }),
+      clear: () => {
+        announceBulkChange();
+        set({ signals: [] });
+      },
     }),
     { name: 'lesekompass.signals', version: 1 },
   ),

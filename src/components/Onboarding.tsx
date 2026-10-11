@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { CompassMark } from './CompassMark';
 import type { LanguagePreference, Region } from '../lib/types';
 import { useSettings } from '../store/settings';
+import { useSync } from '../store/sync';
 import { Modal } from './Modal';
 
 const REGIONS: Array<{ id: Region; label: string }> = [
@@ -21,7 +22,9 @@ export function Onboarding() {
   const s = useSettings();
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
-  if (s.onboarded) return null;
+  // Erst den ersten Abgleich abwarten: bringt er schon Daten mit, braucht es keine Begrüssung
+  const syncSettled = useSync((x) => x.settled);
+  if (s.onboarded || !syncSettled) return null;
   const finish = (goImport: boolean) => {
     s.set({ onboarded: true });
     if (goImport) navigate('/bibliothek?tab=import');

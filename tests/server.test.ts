@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -80,7 +80,7 @@ describe('Server ohne Login', () => {
 
   it('hat die lokale API', async () => {
     const r = await call(server, '/api/status');
-    expect(JSON.parse(r.body)).toEqual({ goodreads: true, ai: false });
+    expect(JSON.parse(r.body)).toEqual({ goodreads: true, ai: false, sync: false, user: null });
   });
 });
 
@@ -116,6 +116,64 @@ describe('Server mit Login', () => {
     for (let i = 0; i < 5; i++) await call(locked, '/', { auth: 'a:falsch' });
     expect((await call(locked, '/', { auth: 'a:b' })).status).toBe(429);
     locked.close();
+  });
+});
+
+describe('Geräte-Abgleich über HTTP', () => {
+  let server: Server;
+  const dataDir = mkdtempSync(join(tmpdir(), 'lesekompass-data-'));
+  const json = { 'content-type': 'application/json' };
+  const post = (auth: string, body: unknown, headers: Record<string, string> = json) =>
+    call(server, '/api/sync', { auth, method: 'POST', headers, body: typeof body === 'string' ? body : JSON.stringify(body) });
+  const entry = (id: string) => ({ c: 'library', id, at: 10, v: { id, title: `Buch ${id}`, authors: ['A'], shelf: 'read', rating: 4 } });
+
+  beforeAll(async () => (server = await start(config({ users: parseUsers('ich:geheim; partner:auch-geheim'), dataDir }))));
+  afterAll(() => server.close());
+
+  it('meldet Abgleich und Login im Status', async () => {
+    const r = await call(server, '/api/status', { auth: 'ich:geheim' });
+    expect(JSON.parse(r.body)).toMatchObject({ sync: true, user: 'ich' });
+  });
+
+  it('hält die Daten pro Login getrennt', async () => {
+    const pushed = await post('ich:geheim', { since: 0, changes: [entry('gr:1')] });
+    expect(pushed.status).toBe(200);
+    expect(JSON.parse(pushed.body)).toMatchObject({ ok: true, accepted: 1, user: 'ich' });
+    expect(JSON.parse((await post('partner:auch-geheim', { since: 0, changes: [] })).body).changes).toEqual([]);
+    expect(JSON.parse((await post('ich:geheim', { since: 0, changes: [] })).body).changes).toHaveLength(1);
+    expect(readdirSync(dataDir).filter((f) => f.endsWith('.json'))).toHaveLength(1);
+  });
+
+  it('verlangt Login, eigene Herkunft, JSON und POST', async () => {
+    expect((await call(server, '/api/sync', { method: 'POST', headers: json, body: '{}' })).status).toBe(401);
+    expect((await post('ich:geheim', { since: 0 }, { ...json, origin: 'https://boese.example' })).status).toBe(403);
+    expect((await post('ich:geheim', { since: 0 }, { 'content-type': 'text/plain' })).status).toBe(403);
+    expect((await call(server, '/api/sync', { auth: 'ich:geheim' })).status).toBe(405);
+    expect((await post('ich:geheim', '{ kaputt')).status).toBe(400);
+    const bad = await post('ich:geheim', { since: 0, changes: [{ c: 'geheim', id: 'x', at: 1, v: 1 }] });
+    expect(bad.status).toBe(400);
+    expect(JSON.parse(bad.body).error).toContain('Unbekannte Sammlung');
+  });
+
+  it('komprimiert grosse Antworten', async () => {
+    await post('ich:geheim', { since: 0, changes: Array.from({ length: 80 }, (_, i) => entry(`gr:z${i}`)) });
+    const r = await call(server, '/api/sync', { auth: 'ich:geheim', method: 'POST', headers: { ...json, 'accept-encoding': 'gzip' }, body: '{"since":0,"changes":[]}' });
+    expect(r.status).toBe(200);
+    expect(r.headers['content-encoding']).toBe('gzip');
+  });
+
+  it('gibt es ohne Datenordner nicht', async () => {
+    const plain = await start(config());
+    const r = await call(plain, '/api/sync', { method: 'POST', headers: json, body: '{}' });
+    expect(r.status).toBe(404);
+    plain.close();
+  });
+
+  it('prüft den Abgleich im Selbsttest, ohne echte Daten anzufassen', async () => {
+    const untouched = mkdtempSync(join(tmpdir(), 'lesekompass-echt-'));
+    expect(await selftest(config({ dataDir: untouched, users: parseUsers('ich:geheim') }))).toEqual([]);
+    expect(readdirSync(untouched)).toEqual([]);
+    expect(existsSync(join(untouched, 'sicherungen'))).toBe(false);
   });
 });
 

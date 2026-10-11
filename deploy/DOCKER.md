@@ -2,6 +2,8 @@
 
 So läuft der Lesekompass genauso wie deine Yoga-App **Olympus**: in einem eigenen Docker-Container, der beim Windows-Start mitstartet, im Heimnetz erreichbar ist und sich **selbst aktualisiert**. Sobald Claude eine Änderung auf GitHub hochlädt, holt der Container sie innerhalb einer Minute, baut und testet sie und schaltet erst dann um. Klappt etwas nicht, läuft die bisherige Version einfach weiter.
 
+Deine Bibliothek, Merkliste und Einstellungen liegen dabei auf dem Server: **Handy, Tablet und PC haben immer denselben Stand.**
+
 | | Olympus | Lesekompass |
 |---|---|---|
 | Ordner | `C:\Unfurl` | `C:\Lesekompass` |
@@ -37,7 +39,7 @@ LESEKOMPASS_AUTH=ich:ein-langes-passwort
 
 Speichern, Notepad schliessen – das Skript baut dann den Container (beim ersten Mal ein paar Minuten) und öffnet <http://localhost:8080/>. Der Browser fragt nach Name und Passwort.
 
-> Der Login ist optional, aber empfohlen: Ohne Login kann jedes Gerät in deinem Netzwerk den Lesekompass öffnen, und ein Claude-Schlüssel auf dem Server bleibt gesperrt.
+> Der Login ist optional, aber empfohlen: Ohne Login kann jedes Gerät in deinem Netzwerk den Lesekompass öffnen (und deine Bibliothek ändern), und ein Claude-Schlüssel auf dem Server bleibt gesperrt. Der Login bestimmt auch, **welche Bibliothek** du siehst – mehr dazu unter „Deine Daten“.
 
 **3. Firewall für das Heimnetz** (einmal, PowerShell **als Administrator**):
 
@@ -80,13 +82,28 @@ Typische Zeilen: `Update auf 1a2b3c4d5e6f läuft und ist gesund` · `NICHT aktua
 
 ---
 
-## Deine Daten
+## Deine Daten – auf allen Geräten gleich
 
-Bibliothek, Merkliste, Bewertungen und Einstellungen speichert der Lesekompass **im Browser des jeweiligen Geräts** (nicht im Container). Updates, Neubauten oder ein gelöschter Container berühren sie nicht.
+Bibliothek, Bewertungen, Merkliste, Swipe-Geschmack und die Einstellungen (Region, Shop, Sprache, Anna’s Archive, KI-Modell) liegen **auf dem Server**. Jedes Gerät, das den Lesekompass mit deinem Login öffnet, hat denselben Stand: auf dem Handy gemerkt, am PC sofort da. Goodreads musst du nur einmal verbinden.
 
-Das heisst auch: Dein Handy und dein PC haben je eine eigene Bibliothek. Am einfachsten verbindest du Goodreads auf jedem Gerät einmal. Alternativ: **Bibliothek → Goodreads & Daten → Sicherung herunterladen** auf dem einen Gerät und **Wiederherstellen** auf dem anderen.
+* **Offline:** Ohne Verbindung arbeitest du normal weiter. Änderungen gehen raus, sobald der Server wieder erreichbar ist. Haben zwei Geräte dasselbe Buch geändert, gilt die spätere Änderung.
+* **Pro Gerät** bleiben nur das Design (hell/dunkel) und API-Schlüssel, die du im Browser eingetragen hast.
+* **Mehrere Personen:** Jedes Login in `LESEKOMPASS_AUTH` hat seine eigene Bibliothek, z. B. `LESEKOMPASS_AUTH=ich:passwort1;partner:passwort2`. Ohne Login teilen sich alle Geräte im Netz eine Bibliothek.
+* **Schon Daten auf einem Gerät?** Beim ersten Abgleich wird zusammengeführt. Was schon auf dem Server liegt, hat Vorrang; was nur auf dem Gerät liegt, kommt dazu.
+* **Status:** Unten in der App steht „☁️ Geräte abgeglichen“. Unter **Einstellungen → Geräte abgleichen** siehst du Details, kannst sofort abgleichen oder den Abgleich auf einem Gerät ausschalten.
 
-> Wichtig: Die Daten hängen an der Adresse. `http://localhost:8080` und `http://PCNAME:8080` sind für den Browser zwei verschiedene Orte – nimm auf jedem Gerät immer dieselbe Adresse (Lesezeichen!).
+**Wo liegen die Daten?** Im Docker-Volume des Containers, Ordner `/srv/lesekompass/data` – eine Datei pro Login. Updates, Neubauten (`docker-neu-bauen.bat`) und Neustarts berühren sie nicht. Zusätzlich legt der Server jeden Tag eine Sicherung an (`data/sicherungen`, die letzten 14 Tage).
+
+> **Achtung:** `docker compose … down -v` (mit **-v**) löscht das Volume und damit deine Daten. Zum Stoppen immer ohne `-v`.
+
+**Selbst eine Kopie ziehen** (z. B. für OneDrive):
+
+```powershell
+cd C:\Lesekompass
+docker compose -f deploy/docker-compose.yml cp lesekompass:/srv/lesekompass/data .\daten-sicherung
+```
+
+Die Datei-Sicherung in der App gibt es weiterhin: **Bibliothek → Goodreads & Daten → Sicherung herunterladen**. Zurückspielen ersetzt dann den Stand auf allen Geräten.
 
 ---
 
@@ -146,3 +163,6 @@ Dann ist der Lesekompass unter `https://DEINPC.tailXXXX.ts.net:8443/` erreichbar
 | Build in der Fusszeile ändert sich nicht | Logs ansehen (siehe oben). `konnte … nicht holen` = keine Verbindung zu GitHub; `NICHT aktualisiert` = diese Version wurde abgelehnt, die alte läuft weiter – Claude Bescheid geben. |
 | Statt „KI fragen“ steht „KI-Empfehlungen aktivieren“ | `ANTHROPIC_API_KEY` **und** `LESEKOMPASS_AUTH` setzen, dann `up -d --force-recreate`. Oder den Schlüssel in der App unter Einstellungen eintragen. |
 | Container startet immer wieder neu | `docker compose -f deploy/docker-compose.yml logs --tail 50` und die letzten Zeilen an Claude schicken. |
+| Unten steht „⚠️ Abgleich gestört“ | Einstellungen → Geräte abgleichen zeigt den Grund. Bei „Bitte neu anmelden“ die Seite neu laden. Sonst die Logs (siehe oben) an Claude schicken – deine Daten bleiben auf dem Gerät und gehen beim nächsten erfolgreichen Abgleich raus. |
+| Auf einem Gerät fehlt etwas | Einstellungen → Geräte abgleichen → **Alles neu vom Server holen**. |
+| Auf einem Gerät sind fremde Bücher | Prüfen, mit welchem Login das Gerät angemeldet ist (Einstellungen → Geräte abgleichen zeigt „Aktiv für …“). |
