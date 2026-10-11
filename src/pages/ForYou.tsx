@@ -5,6 +5,7 @@ import { Empty, SkeletonGrid } from '../components/Feedback';
 import { useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { isProfileUsable, topGenres } from '../lib/profile';
 import { buildRecommendations, uniqueAcrossSections, type RecSection } from '../lib/recommend';
+import { fatigue } from '../store/impressions';
 import { useSettings } from '../store/settings';
 import { useSignals } from '../store/signals';
 
@@ -29,7 +30,7 @@ export default function ForYou() {
     setSections([]);
     setLoading(true);
     const dismissed = new Set(signals.filter((s) => s.verdict === 'dislike').map((s) => s.bookId));
-    buildRecommendations(entries, { profile, readIndex, language, dismissed }, (section) => {
+    buildRecommendations(entries, { profile, readIndex, language, dismissed, fatigue: (id) => fatigue(id) }, (section) => {
       if (!cancelled) setSections((prev) => [...prev.filter((p) => p.id !== section.id), section]);
     }).finally(() => !cancelled && setLoading(false));
     return () => {

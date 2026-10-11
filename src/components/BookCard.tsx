@@ -1,7 +1,8 @@
-import { memo } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { isbnCoverUrl } from '../lib/openLibrary';
 import type { Book, ScoredBook } from '../lib/types';
+import { useImpressions, watchImpression } from '../store/impressions';
 import { useSignals } from '../store/signals';
 import { rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
@@ -34,15 +35,27 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, o
   const openRating = useUi((s) => s.openRating);
   const path = bookPath(book);
   const isbn = book.isbns?.[0];
+  const ref = useRef<HTMLElement>(null);
+  // Gesehen, aber nichts gemacht? Fliesst in die Rotation der Treffer ein (siehe lib/freshness)
+  useEffect(() => (ref.current ? watchImpression(ref.current, () => useImpressions.getState().see(book.id)) : undefined), [book.id]);
+  const engaged = () => useImpressions.getState().engage(book.id);
   // „Auf Deutsch“ ist der Normalfall – erwähnt wird nur, wenn es keine deutsche Ausgabe gibt
   const why = (scored?.reasons ?? []).filter((r) => r.kind !== 'ai' && r.kind !== 'german').slice(0, maxReasons).map((r) => r.label);
   if (notInGerman(book)) why.push('nicht auf Deutsch');
   const match = scored && scored.match > 0 ? scored.match : 0;
 
   return (
-    <article className="book-card">
+    <article className="book-card" ref={ref}>
       <div style={{ position: 'relative' }}>
-        <Link to={path} className="cover-link" onClick={() => rememberBook(book)} aria-label={`${book.title} öffnen`}>
+        <Link
+          to={path}
+          className="cover-link"
+          onClick={() => {
+            rememberBook(book);
+            engaged();
+          }}
+          aria-label={`${book.title} öffnen`}
+        >
           <Cover title={book.title} author={book.authors[0]} coverId={book.coverId} src={book.coverUrl} fallbacks={isbn ? [isbnCoverUrl(isbn)] : []} />
         </Link>
         {scored?.alreadyRead && (
@@ -58,6 +71,7 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, o
               title={saved ? 'Von der Merkliste nehmen' : 'Auf die Merkliste'}
               aria-pressed={saved}
               onClick={() => {
+                engaged();
                 const added = toggle(book, origin);
                 if (added) record(book, 'save');
                 toast(added ? `„${book.title}“ gemerkt` : 'Von der Merkliste entfernt');
@@ -65,7 +79,15 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, o
             >
               {saved ? '♥' : '♡'}
             </button>
-            <button type="button" className="mini-btn" title="Schon gelesen" onClick={() => openRating(book)}>
+            <button
+              type="button"
+              className="mini-btn"
+              title="Schon gelesen"
+              onClick={() => {
+                engaged();
+                openRating(book);
+              }}
+            >
               ✓
             </button>
             {onDismiss && (
@@ -86,7 +108,14 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, o
         )}
       </div>
       <div className="meta">
-        <Link to={path} className="title" onClick={() => rememberBook(book)}>
+        <Link
+          to={path}
+          className="title"
+          onClick={() => {
+            rememberBook(book);
+            engaged();
+          }}
+        >
           {book.title}
         </Link>
         <span className="author">

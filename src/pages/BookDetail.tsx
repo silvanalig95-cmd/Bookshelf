@@ -21,6 +21,7 @@ import { readBlurb, writeBlurb } from '../lib/blurbCache';
 import { contentSummary, deeplUrl, germanWikipediaSummary, guessLanguage } from '../lib/wikipedia';
 import type { AiConfig } from '../lib/aiPrompts';
 import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
+import { useImpressions } from '../store/impressions';
 import { useSignals } from '../store/signals';
 import { recallBook, rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
@@ -88,6 +89,8 @@ export default function BookDetail() {
   const openRating = useUi((s) => s.openRating);
   const aiSettings = useSettings();
   const [ai, setAi] = useState<AiAccess>({ available: false });
+  // Wer ein Buch öffnet, ignoriert es nicht – zählt für die Rotation der Treffer
+  useEffect(() => useImpressions.getState().engage(id), [id]);
   useEffect(() => {
     aiAvailability(aiSettings).then(setAi);
     // eslint-disable-next-line react-hooks/exhaustive-deps

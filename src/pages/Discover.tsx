@@ -21,7 +21,9 @@ import { toRef, understandWish } from '../lib/wish';
 import { ERAS, GENRES, MOODS, PLACES } from '../lib/taxonomy';
 import { pickRandom, shuffle, uniqBy } from '../lib/text';
 import type { Book, ScoredBook } from '../lib/types';
+import { rotate } from '../lib/freshness';
 import { useDiscover } from '../store/discover';
+import { fatigue } from '../store/impressions';
 import { useSettings } from '../store/settings';
 import { recallBook, rememberBook } from '../store/ui';
 
@@ -197,7 +199,11 @@ export default function Discover() {
         );
         if (controller.signal.aborted) return;
         const dismissedSet = new Set(useDiscover.getState().dismissed);
-        const fresh = res.results.filter((r) => !dismissedSet.has(r.book.id));
+        // Lange Ignoriertes rutscht nach hinten, die Reihenfolge rotiert täglich leicht
+        const fresh = rotate(
+          res.results.filter((r) => !dismissedSet.has(r.book.id)),
+          (id) => fatigue(id),
+        );
         fresh.forEach((r) => rememberBook(r.book));
         const list = pageNum === 0 ? fresh : uniqBy([...useDiscover.getState().results, ...fresh], (r) => r.book.id);
         setResults(debouncedKey, list, res.total, pageNum, interp);

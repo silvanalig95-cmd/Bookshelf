@@ -8,6 +8,7 @@
  *  - Geheimtipps: gut bewertet, aber kaum bekannt – in deinen Themen.
  *  - Über den Tellerrand: verwandte Themen, die du selten liest (Serendipität).
  */
+import { rotate } from './freshness';
 import { ageWeight, bayesRating, distinctiveSubjects, famePrior, hasGerman, MIN_RATINGS, mergeBooks } from './discovery';
 import { settle } from './http';
 import { docToBook, getSubject, searchWorks, subjectKey, type OLSort } from './openLibrary';
@@ -29,6 +30,8 @@ interface RecContext {
   readIndex: ReadIndex;
   language: LanguagePreference;
   dismissed?: Set<string>;
+  /** Abzug für lange ignorierte Bücher (0–1), siehe lib/freshness. */
+  fatigue?: (id: string) => number;
 }
 
 function langClause(language: LanguagePreference): string {
@@ -61,11 +64,8 @@ export function scoreForProfile(book: Book, ctx: RecContext, extraReasons: Reaso
 }
 
 function rank(books: Book[], ctx: RecContext, extra: Reason[] = [], max = 18): ScoredBook[] {
-  return books
-    .map((b) => scoreForProfile(b, ctx, extra))
-    .filter((x): x is ScoredBook => Boolean(x))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, max);
+  const scored = books.map((b) => scoreForProfile(b, ctx, extra)).filter((x): x is ScoredBook => Boolean(x));
+  return (ctx.fatigue ? rotate(scored, ctx.fatigue) : scored).sort((a, b) => b.score - a.score).slice(0, max);
 }
 
 /** Bücher, die Lieblingsbüchern ähneln („Weil du X mochtest“). */
