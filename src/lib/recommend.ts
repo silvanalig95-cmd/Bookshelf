@@ -8,7 +8,7 @@
  *  - Geheimtipps: gut bewertet, aber kaum bekannt – in deinen Themen.
  *  - Über den Tellerrand: verwandte Themen, die du selten liest (Serendipität).
  */
-import { bayesRating, distinctiveSubjects, famePrior, hasGerman, MIN_RATINGS, mergeBooks } from './discovery';
+import { ageWeight, bayesRating, distinctiveSubjects, famePrior, hasGerman, MIN_RATINGS, mergeBooks } from './discovery';
 import { settle } from './http';
 import { docToBook, getSubject, searchWorks, subjectKey, type OLSort } from './openLibrary';
 import { conceptsOf, tasteMatch, type TasteProfile } from './profile';
@@ -50,11 +50,13 @@ export function scoreForProfile(book: Book, ctx: RecContext, extraReasons: Reaso
   const quality = (bayes - 3.75) * 0.6;
   const german = hasGerman(book) ? 0.08 : 0;
   // Bekanntheit als spürbarer Zuschlag – Obskures rutscht nach hinten (ausser in „Geheimtipps“, siehe hiddenGems)
-  const score = tm.similarity + quality * 0.25 + german + Math.min(0.15, tm.authorBonus * 0.04) + famePrior(book) * 0.08;
+  const age = ageWeight(book);
+  const score = tm.similarity + quality * 0.25 + german + Math.min(0.15, tm.authorBonus * 0.04) + famePrior(book) * 0.08 + age.adj * 0.12;
   const reasons: Reason[] = [...extraReasons];
   if (tm.shared.length) reasons.push({ kind: 'taste', label: `💛 ${tm.shared.slice(0, 2).join(', ')}` });
   if (german) reasons.push({ kind: 'german', label: '🇩🇪 auf Deutsch' });
   if ((bayesRating(book) ?? 0) >= 4.05 && (book.ratingsCount ?? 0) >= 5) reasons.push({ kind: 'rating', label: `★ ${book.rating!.toFixed(1)}` });
+  if (age.classic) reasons.push({ kind: 'fame', label: '📜 Klassiker' });
   const match = Math.round(clamp(45 + (tm.similarity / 0.35) * 45 + quality * 8, 5, 99));
   return { book, score, match, reasons };
 }

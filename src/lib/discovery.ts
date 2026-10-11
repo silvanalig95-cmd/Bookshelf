@@ -12,6 +12,7 @@ import { conceptsOf } from './profile';
 import type { ReadIndex } from '../store/library';
 import {
   countMatches,
+  detectGenres,
   eraById,
   ERAS,
   genreById,
@@ -464,6 +465,34 @@ export function famePrior(book: Book): number {
   return clamp((fameScore(book) - 1.6) / 1.4, -1, 1);
 }
 
+/** Genres, bei denen ältere Bücher meist nur als Klassiker interessant sind. */
+const AGING_GENRES = ['krimi', 'thriller', 'fantasy', 'scifi', 'dystopie', 'horror', 'liebe', 'humor', 'abenteuer', 'jugend', 'kinder', 'comic', 'spionage', 'krieg', 'historisch', 'familie'];
+/** Ab diesem Alter verliert ein Genre-Buch an Gewicht, ab AGE_FULL zählt es nur noch als Klassiker. */
+const AGE_START = 25;
+const AGE_FULL = 45;
+
+/**
+ * Altersgewicht: ältere Krimis, Fantasy, Science-Fiction … rutschen nach hinten, ausser sie sind
+ * etablierte Klassiker (sehr bekannt). Weltliteratur, Lyrik, Philosophie & Co. bleiben unberührt.
+ * Entscheidend ist das Genre – Open Library versieht fast alles mit „Classic“ oder „English literature“.
+ * `adj` −1 (alt und kaum bekannt) … 0 (kein Abzug); `classic` = alt und sehr bekannt.
+ */
+export function ageWeight(book: Book, now = new Date().getFullYear()): { adj: number; classic: boolean } {
+  const age = book.year ? now - book.year : 0;
+  if (age <= AGE_START) return { adj: 0, classic: false };
+  const known = book.popularity !== undefined || book.ratingsCount !== undefined || book.editionCount !== undefined;
+  if (!known) return { adj: 0, classic: false };
+  const fame = fameScore(book);
+  const genres = detectGenres(normalize(book.subjects.join(' | ')));
+  // Ausdrücklich literarische Werke (Saramago, Murakami …) altern nicht, auch wenn sie Dystopie- oder Fantasy-Schlagwörter tragen
+  const literary = genres.some((g) => ['literatur', 'magischer-realismus', 'lyrik', 'kurzgeschichten'].includes(g));
+  const aging = !literary && (genres.some((g) => AGING_GENRES.includes(g)) || bookKind(book) === 'nonfiction');
+  if (!aging) return { adj: 0, classic: age >= 40 && fame >= 2.6 };
+  const oldness = clamp((age - AGE_START) / (AGE_FULL - AGE_START), 0, 1);
+  const established = clamp((fame - 2.6) / 0.9, 0, 1);
+  return { adj: -oldness * (1 - established) || 0, classic: age >= 40 && fame >= 3.2 };
+}
+
 export function bayesRating(book: Book): number | undefined {
   if (!book.rating || !book.ratingsCount) return undefined;
   const prior = 3.75;
@@ -675,6 +704,13 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     s += 10 * (fit * 2 - 1);
     if (p.fame < 0 && pop < 1.6 && (bayes ?? 0) >= 3.9) reasons.push({ kind: 'fame', label: '💎 Geheimtipp' });
     if (p.fame > 0 && pop > 2.7) reasons.push({ kind: 'fame', label: '🔥 sehr beliebt' });
+  }
+  // Alter: ältere Genre-Bücher nur, wenn sie Klassiker sind – ausser es wurde ausdrücklich nach älteren gefragt
+  const wantsOld = p.eras.length > 0 || Boolean(p.yearTo) || p.genres.includes('klassiker');
+  if (!wantsOld) {
+    const age = ageWeight(book);
+    s += 14 * age.adj;
+    if (age.classic) reasons.push({ kind: 'fame', label: '📜 Klassiker' });
   }
   // Länge
   if ((p.pagesMin || p.pagesMax) && book.pages) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildQueryPlans, DEFAULT_PARAMS, famePrior, fameScore, scoreBook } from '../src/lib/discovery';
+import { ageWeight, buildQueryPlans, DEFAULT_PARAMS, ERAS, famePrior, fameScore, scoreBook } from '../src/lib/discovery';
 import { docToBook } from '../src/lib/openLibrary';
 import { book } from './helpers';
 
@@ -59,5 +59,36 @@ describe('Cover', () => {
     expect(doc(2013, 7).coverId).toBe(99);
     expect(doc(1921).coverId).toBe(99); // kein anderes Cover vorhanden
     expect(doc(1921, 7).title).toBe('Schuld und Sühne'); // der Titel bleibt deutsch
+  });
+});
+
+describe('Alter', () => {
+  const now = 2026;
+  const fantasy = (year: number, popularity: number, ratingsCount: number, editionCount: number) =>
+    book({ id: `f${year}${popularity}`, title: 'Fantasy', year, subjects: ['Fantasy fiction', 'Magic', 'Dragons'], languages: ['ger'], popularity, ratingsCount, editionCount });
+
+  it('lässt ältere, wenig bekannte Genre-Bücher zurückfallen – Klassiker nicht', () => {
+    expect(ageWeight(fantasy(2015, 50, 5, 3), now).adj).toBe(0);
+    expect(ageWeight(fantasy(1975, 50, 5, 3), now).adj).toBe(-1);
+    expect(ageWeight(fantasy(1986, 50, 5, 3), now).adj).toBeCloseTo(-0.75);
+    const classic = ageWeight(fantasy(1954, 40000, 2000, 300), now);
+    expect(classic.adj).toBe(0);
+    expect(classic.classic).toBe(true);
+  });
+
+  it('lässt Weltliteratur und Literarisches altern, ohne Abzug', () => {
+    const kafka = book({ id: 'k', title: 'Das Schloss', year: 1926, subjects: ['Bureaucracy', 'Fiction', 'Classic Literature'], languages: ['ger'], popularity: 300, ratingsCount: 30, editionCount: 40 });
+    expect(ageWeight(kafka, now).adj).toBe(0);
+    const saramago = book({ id: 's', title: 'Die Stadt der Blinden', year: 1995, subjects: ['Dystopias', 'Fiction, literary', 'Blindness'], languages: ['ger'], popularity: 200, ratingsCount: 20, editionCount: 30 });
+    expect(ageWeight(saramago, now).adj).toBe(0);
+  });
+
+  it('wirkt in der Suche – ausser wenn ausdrücklich nach Älterem gefragt wird', () => {
+    const old = fantasy(1980, 300, 20, 10);
+    const fresh = fantasy(2018, 300, 20, 10);
+    const p = { ...DEFAULT_PARAMS, genres: ['fantasy'] };
+    expect(scoreBook(fresh, p)!.score).toBeGreaterThan(scoreBook(old, p)!.score + 8);
+    const eraParams = { ...p, eras: [ERAS[0].id] }; // Epoche gewählt = ausdrücklich Älteres erwünscht
+    expect(Math.abs(scoreBook(fresh, eraParams)!.score - scoreBook(old, eraParams)!.score)).toBeLessThan(1);
   });
 });
