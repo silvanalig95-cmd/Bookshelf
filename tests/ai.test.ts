@@ -37,3 +37,26 @@ describe('KI-Hilfen', () => {
     expect(bad.success).toBe(false);
   });
 });
+
+describe('Buchverweise in KI-Antworten', () => {
+  const books = (text: string) => parseBookRefs(text).filter((p) => p.type === 'book');
+
+  it('erkennt auch übliche Schreibweisen, falls die KI das Format vergisst', () => {
+    expect(books('Lies **Stoner** von John Williams – ein stilles Meisterwerk.')).toEqual([{ type: 'book', title: 'Stoner', author: 'John Williams' }]);
+    expect(books('„Hunger“ von Knut Hamsun Der Roman ist kurz.')).toEqual([{ type: 'book', title: 'Hunger', author: 'Knut Hamsun' }]);
+    expect(books('*Der Meister und Margarita* (von Michail Bulgakow)')).toEqual([{ type: 'book', title: 'Der Meister und Margarita', author: 'Michail Bulgakow' }]);
+    expect(books('»Hundert Jahre Einsamkeit« von Gabriel García Márquez')).toEqual([{ type: 'book', title: 'Hundert Jahre Einsamkeit', author: 'Gabriel García Márquez' }]);
+    expect(books('"Normal People" by Sally Rooney')).toEqual([{ type: 'book', title: 'Normal People', author: 'Sally Rooney' }]);
+  });
+
+  it('lässt gewöhnliches Fett und Anführungszeichen in Ruhe', () => {
+    expect(books('**Tipp** von mir: lies mehr.')).toEqual([]);
+    expect(books('Das ist „spannend“ und **wichtig**.')).toEqual([]);
+  });
+
+  it('mischt beide Formate', () => {
+    const parts = parseBookRefs('Erst [[Momo|Michael Ende]], dann **Die Wand** von Marlen Haushofer.');
+    expect(parts.filter((p) => p.type === 'book').map((p) => (p as { title: string }).title)).toEqual(['Momo', 'Die Wand']);
+    expect(parts.map((p) => (p.type === 'text' ? p.text : `[${p.title}]`)).join('')).toBe('Erst [Momo], dann [Die Wand].');
+  });
+});

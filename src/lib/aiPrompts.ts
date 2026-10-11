@@ -146,19 +146,45 @@ export function cleanRecommendation(raw: unknown): unknown {
 /* ------------------------------------------------------------------ */
 
 export const CHAT_INSTRUCTIONS = `Du führst ein Gespräch über Bücher. Stelle bei vagen Wünschen gern eine kurze Rückfrage, aber liefere meist direkt 3–6 Vorschläge.
-Formatiere jede Buchempfehlung als [[Titel|Autor]] (deutscher Titel, falls vorhanden) – die App macht daraus anklickbare Karten. Danach in einem kurzen Satz, warum es passt.
+Schreibe JEDES Buch, das du nennst – auch nebenbei im Fliesstext –, als [[Titel|Autor]] (deutscher Titel, falls vorhanden), z. B. [[Der Schatten des Windes|Carlos Ruiz Zafón]]. Nie als **Titel** oder „Titel“. Die App macht daraus Links zur Buchseite. Danach in einem kurzen Satz, warum es passt.
 Nutze einfache Markdown-Formatierung (Absätze, **fett**, Aufzählungen), keine Tabellen. Fasse dich eher kurz.`;
 
-/** Zerlegt eine Antwort in Text und [[Titel|Autor]]-Buchverweise. */
-export function parseBookRefs(text: string): Array<{ type: 'text'; text: string } | { type: 'book'; title: string; author: string }> {
-  const parts: Array<{ type: 'text'; text: string } | { type: 'book'; title: string; author: string }> = [];
+type RefPart = { type: 'text'; text: string } | { type: 'book'; title: string; author: string };
+
+/**
+ * Hält sich die KI nicht an [[Titel|Autor]], erkennt die App auch die üblichen Schreibweisen
+ * **Titel** von Autor, *Titel* von Autor, „Titel“ von Autor, "Titel" von Autor, »Titel« von Autor (auch „by“).
+ * Der Name muss gross beginnen – „**Tipp** von mir“ bleibt Text.
+ */
+const LOOSE_REF =
+  /(?:\*\*([^*\n]{2,90})\*\*|\*([^*\n]{2,90})\*|„([^“”\n]{2,90})[“”]|"([^"\n]{2,90})"|»([^«\n]{2,90})«)\s*(?:\(\s*)?(?:,\s*)?(?:von|by)\s+(\p{Lu}[\p{L}.'’-]*(?:\s+(?!(?:Der|Die|Das|Den|Dem|Ein|Eine|Er|Sie|Es|Ich|Du|Wir|Ihr|In|Im|Am|Mit|Und|Aber|Auch|Ist|War|Roman|Buch|Novelle|Klassiker|Hier|Dort|Dann|Danach)\b)(?:\p{Lu}[\p{L}.'’-]*|von|van|de|der|da|di|del|le|la|y|ibn|bin)){0,3})/gu;
+
+function splitLoose(text: string): RefPart[] {
+  const parts: RefPart[] = [];
+  let last = 0;
+  for (const m of text.matchAll(LOOSE_REF)) {
+    const title = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5] ?? '').trim().replace(/[.,;:]+$/, '');
+    if (!title) continue;
+    if (m.index! > last) parts.push({ type: 'text', text: text.slice(last, m.index) });
+    // Ein Punkt nach dem Namen beendet den Satz – ausser nach einer Initiale („J. K. Rowling“)
+    const sentenceEnd = /\p{L}{2,}\.$/u.test(m[6]) ? 1 : 0;
+    parts.push({ type: 'book', title, author: m[6].slice(0, m[6].length - sentenceEnd).trim() });
+    last = m.index! + m[0].length - sentenceEnd;
+  }
+  if (last < text.length) parts.push({ type: 'text', text: text.slice(last) });
+  return parts;
+}
+
+/** Zerlegt eine Antwort in Text und Buchverweise ([[Titel|Autor]] und übliche Schreibweisen). */
+export function parseBookRefs(text: string): RefPart[] {
+  const parts: RefPart[] = [];
   const re = /\[\[([^\]|]+)\|([^\]]+)\]\]/g;
   let last = 0;
   for (const m of text.matchAll(re)) {
-    if (m.index! > last) parts.push({ type: 'text', text: text.slice(last, m.index) });
+    if (m.index! > last) parts.push(...splitLoose(text.slice(last, m.index)));
     parts.push({ type: 'book', title: m[1].trim(), author: m[2].trim() });
     last = m.index! + m[0].length;
   }
-  if (last < text.length) parts.push({ type: 'text', text: text.slice(last) });
+  if (last < text.length) parts.push(...splitLoose(text.slice(last)));
   return parts;
 }
