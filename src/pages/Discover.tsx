@@ -3,8 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { BookCard, BookGrid } from '../components/BookCard';
 import { BookSearchBox } from '../components/BookSearchBox';
 import { Empty, SkeletonGrid } from '../components/Feedback';
-import type { AiRecommendation } from '../lib/ai';
-import { aiAvailability, type AiVia } from '../lib/aiStatus';
+import type { AiRecommendResult } from '../lib/ai';
+import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
 import {
   DEFAULT_PARAMS,
   describeSearch,
@@ -93,7 +93,7 @@ function randomParams(base: DiscoveryParams): DiscoveryParams {
 interface AiState {
   loading: boolean;
   error?: string;
-  result?: AiRecommendation;
+  result?: AiRecommendResult;
   books: ScoredBook[];
   forWish?: string;
 }
@@ -111,15 +111,17 @@ export default function Discover() {
   const [wishDraft, setWishDraft] = useState(params.wish);
   const [textDraft, setTextDraft] = useState(params.text);
   const [excludeDraft, setExcludeDraft] = useState('');
-  const [ai, setAi] = useState<{ available: boolean; via?: AiVia }>({ available: false });
+  const [ai, setAi] = useState<AiAccess>({ available: false });
+  const aiName = ai.provider === 'claude' ? 'Claude' : 'Gemini';
   const [aiState, setAiState] = useState<AiState>({ loading: false, books: [] });
   const [visible, setVisible] = useState(40);
   const controllerRef = useRef<AbortController | null>(null);
   const hasProfile = Boolean(profile && profile.topConcepts.length >= 3);
 
   useEffect(() => {
-    aiAvailability(settings.aiApiKey).then(setAi);
-  }, [settings.aiApiKey]);
+    aiAvailability(settings).then(setAi);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.aiProvider, settings.aiApiKey, settings.geminiApiKey]);
   useEffect(() => setWishDraft(params.wish), [params.wish]);
   useEffect(() => setTextDraft(params.text), [params.text]);
 
@@ -212,13 +214,14 @@ export default function Discover() {
 
   const askAi = async () => {
     const w = (wishDraft || params.wish || params.text).trim();
-    if (!w || !ai.available || !ai.via) return;
+    const config = aiConfigFor(ai, settings);
+    if (!w || !config) return;
     setAiState({ loading: true, books: [], forWish: w });
-    // Das Claude-SDK erst bei Bedarf laden
+    // Die KI-Anbindung erst bei Bedarf laden
     const { aiErrorMessage, aiRecommend, readingContext } = await import('../lib/ai');
     try {
       const context = readingContext(entries, profile);
-      const result = await aiRecommend(w, { via: ai.via, key: settings.aiApiKey, model: settings.aiModel }, context);
+      const result = await aiRecommend(w, config, context);
       const resolved = await Promise.all(
         result.recommendations.map(async (rec) => {
           const book = await resolveBook(rec.title, rec.author).catch(() => undefined);
@@ -320,7 +323,7 @@ export default function Discover() {
                 </button>
                 {ai.available ? (
                   <button className="btn btn-sm btn-soft" onClick={askAi} disabled={aiState.loading || !(wishDraft || params.wish || params.text).trim()}>
-                    ✨ {aiState.loading ? 'Claude denkt nach …' : 'KI fragen'}
+                    ✨ {aiState.loading ? `${aiName} denkt nach …` : 'KI fragen'}
                   </button>
                 ) : (
                   <Link to="/einstellungen#ki" className="small">
@@ -593,7 +596,7 @@ export default function Discover() {
           {(aiState.loading || aiState.result || aiState.error) && (
             <div className="card" style={{ marginBottom: 22, borderColor: 'var(--violet)', background: 'linear-gradient(135deg, var(--violet-soft), transparent 60%), var(--surface)' }}>
               <div className="row between wrap">
-                <span className="ai-badge">✨ Claude empfiehlt</span>
+                <span className="ai-badge">✨ {aiName} empfiehlt</span>
                 {aiState.result && (
                   <button className="btn btn-sm" onClick={applyAiParams}>
                     Suchparameter übernehmen
@@ -602,7 +605,7 @@ export default function Discover() {
               </div>
               {aiState.loading && (
                 <div className="loading-line">
-                  <span className="spinner" /> Claude blättert durch die Regale und denkt über „{aiState.forWish}“ nach …
+                  <span className="spinner" /> {aiName} blättert durch die Regale und denkt über „{aiState.forWish}“ nach …
                 </div>
               )}
               {aiState.error && <p className="mt-1" style={{ color: 'var(--rose)' }}>{aiState.error}</p>}
@@ -611,6 +614,7 @@ export default function Discover() {
                   <p className="mt-1" style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem' }}>
                     {aiState.result.understanding}
                   </p>
+                  {aiState.result.note && <p className="small muted">ℹ️ {aiState.result.note}</p>}
                   <div className="book-grid">
                     {aiState.books.map((s, i) => (
                       <BookCard key={s.book.id} book={s.book} scored={{ ...s, match: 0 }} index={i} maxReasons={3} origin="KI-Wunsch" />

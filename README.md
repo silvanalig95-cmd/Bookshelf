@@ -18,7 +18,7 @@ Lesekompass ist eine Web-App, mit der du auf viele verschiedene Arten neue Büch
 | 🎡 **Glücksrad & Blind Date** | Das Rad wählt Genre, Stimmung, Ort, Epoche oder eines deiner Themen – dann lernst du drei Bücher zuerst nur über ihren ersten Satz kennen. |
 | 🔮 **Lese-Orakel** | Sieben verspielte Fragen → Lesepersönlichkeit und passende Bücher. |
 | 🕸️ **Themen-Netz** | Interaktiver Graph: von Thema zu Thema, Ort oder Epoche springen und unterwegs Bücher finden. |
-| ✨ **KI-Bibliothekar** *(optional)* | Chat mit Claude, der deine gelesenen Bücher kennt. Empfehlungen erscheinen als anklickbare Buchkarten. Auch in der Suche: „✨ KI fragen“. |
+| ✨ **KI-Bibliothekar** *(optional)* | Chat mit Google Gemini (gratis) oder Claude – die KI kennt deine gelesenen Bücher. Empfehlungen erscheinen als anklickbare Buchkarten. Auch in der Suche: „✨ KI fragen“. |
 | 📚 **Bibliothek & Lese-DNA** | Goodreads-Import, Merkliste, Bewertungen, Statistiken (Bücher pro Jahr, Sterne, Genres, Autor:innen, Jahrzehnte, Themen, Orte) und eine Lesepersönlichkeit. |
 
 Alle deine Daten (Bibliothek, Merkliste, Einstellungen) bleiben **bei dir**: im Browser – oder, mit der Docker-Installation, auf deinem eigenen Server, damit Handy, Tablet und PC denselben Stand haben. Es gibt kein Konto bei Dritten.
@@ -69,19 +69,23 @@ Danach ordnet Lesekompass deine Bücher im Hintergrund den Werken bei Open Libra
 
 ## Optionale Erweiterungen
 
-### ✨ KI mit Claude
+### ✨ KI: Google Gemini (gratis) oder Claude
 
-Für „KI fragen“ in der Suche und den KI-Bibliothekar brauchst du einen API-Schlüssel von [console.anthropic.com](https://console.anthropic.com/settings/keys) (Abrechnung nach Verbrauch; mit Claude Opus 5.5 typischerweise 5–15 Rappen pro Anfrage, mit Sonnet oder Haiku deutlich weniger – das Modell ist in den Einstellungen wählbar).
+Für „KI fragen“ in der Suche und den KI-Bibliothekar brauchst du einen API-Schlüssel – Anbieter und Modell wählst du unter **Einstellungen → KI**:
+
+- **Google Gemini** – gratis mit Minuten- und Tageslimit. Schlüssel auf [aistudio.google.com/apikey](https://aistudio.google.com/apikey) erstellen. Standard ist *Gemini 3.8 Flash*; ist dessen Gratis-Kontingent aufgebraucht, antwortet automatisch *Gemini 3.5 Flash-Lite*. Im Gratis-Tarif darf Google die Anfragen zur Verbesserung seiner Produkte verwenden.
+- **Claude** von Anthropic – Schlüssel von [console.anthropic.com](https://console.anthropic.com/settings/keys), Abrechnung nach Verbrauch (mit Claude Opus 5.5 typischerweise 5–15 Rappen pro Anfrage, mit Sonnet oder Haiku deutlich weniger).
 
 **Empfohlen – Schlüssel bleibt auf deinem Computer:** Datei `.env` im Projektordner anlegen (Vorlage: `.env.example`):
 
 ```
+GEMINI_API_KEY=...
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-und `npm start` neu ausführen. Alternativ kannst du den Schlüssel unter **Einstellungen → KI** eintragen; er wird dann nur in diesem Browser gespeichert.
+(einer genügt) und `npm start` neu ausführen. Alternativ kannst du den Schlüssel unter **Einstellungen → KI** eintragen; er wird dann nur in diesem Browser gespeichert.
 
-Claude bekommt dabei eine kompakte Zusammenfassung deiner Bibliothek (Lieblingsbücher, Abneigungen, gelesene Titel), damit es nichts Gelesenes empfiehlt und deinen Geschmack trifft.
+Die KI bekommt dabei eine kompakte Zusammenfassung deiner Bibliothek (Lieblingsbücher, Abneigungen, gelesene Titel), damit sie nichts Gelesenes empfiehlt und deinen Geschmack trifft.
 
 ### 📗 Google Books
 
@@ -133,7 +137,7 @@ npm run build      # Produktions-Build nach dist/
 **Technik:** React + TypeScript + Vite, Zustand (Zustände, Bibliothek in IndexedDB), Papa Parse (CSV), Anthropic SDK. Keine UI-Bibliothek – eigenes CSS mit hellem „Papier“- und dunklem „Nachtbibliothek“-Design.
 
 ```
-server/localApi.ts      Lokale API: Goodreads-RSS-Abruf, Claude-Proxy, Geräte-Abgleich
+server/localApi.ts      Lokale API: Goodreads-RSS-Abruf, Claude-/Gemini-Proxy, Geräte-Abgleich
 server/server.ts        Produktions-Server (Docker): App ausliefern, Login, /healthz, Selbsttest
 server/syncStore.ts     Datenablage für den Geräte-Abgleich (pro Login, jüngste Änderung gewinnt)
 src/lib/syncEngine.ts   Abgleich im Browser: Änderungen erkennen, übertragen, übernehmen
@@ -145,7 +149,7 @@ src/lib/recommend.ts    „Für dich“-Empfehlungen
 src/lib/taxonomy.ts     Genres, Stimmungen, Epochen, Orte, deutsche Themen-Labels
 src/lib/shops.ts        Shops, Preisvergleich, Bibliotheken, Anna’s Archive
 src/lib/goodreads.ts    CSV/RSS-Import und Abgleich mit Open Library
-src/lib/ai.ts           Claude: strukturierte Empfehlungen und Chat
+src/lib/ai.ts           KI: strukturierte Empfehlungen und Chat (gemini.ts, claude.ts, aiPrompts.ts)
 src/pages/              Die einzelnen Seiten
 tests/                  Unit-Tests mit Beispieldaten
 ```

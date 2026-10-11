@@ -3,7 +3,7 @@ import { request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { isSameOriginJson } from '../server/localApi';
 import { createAppServer, parseUsers, selftest, type ServerConfig } from '../server/server';
 
@@ -80,7 +80,7 @@ describe('Server ohne Login', () => {
 
   it('hat die lokale API', async () => {
     const r = await call(server, '/api/status');
-    expect(JSON.parse(r.body)).toEqual({ goodreads: true, ai: false, sync: false, user: null });
+    expect(JSON.parse(r.body)).toEqual({ goodreads: true, ai: false, gemini: false, sync: false, user: null });
   });
 });
 
@@ -174,6 +174,49 @@ describe('Geräte-Abgleich über HTTP', () => {
     expect(await selftest(config({ dataDir: untouched, users: parseUsers('ich:geheim') }))).toEqual([]);
     expect(readdirSync(untouched)).toEqual([]);
     expect(existsSync(join(untouched, 'sicherungen'))).toBe(false);
+  });
+});
+
+describe('Gemini über den Server', () => {
+  let server: Server;
+  const upstream: Array<{ url: string; key?: string; body: string }> = [];
+  beforeAll(async () => {
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      upstream.push({ url, key: (init.headers as Record<string, string>)['x-goog-api-key'], body: new TextDecoder().decode(init.body as Uint8Array) });
+      return new Response('data: {"candidates":[]}\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    });
+    server = await start(config({ users: parseUsers('ich:geheim'), geminiApiKey: 'server-key' }));
+  });
+  afterAll(() => {
+    server.close();
+    vi.unstubAllGlobals();
+  });
+  const path = '/api/gemini/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse';
+
+  it('meldet den Gemini-Schlüssel nur angemeldet', async () => {
+    expect(JSON.parse((await call(server, '/api/status', { auth: 'ich:geheim' })).body)).toMatchObject({ gemini: true, ai: false });
+  });
+
+  it('reicht Anfragen mit dem Server-Schlüssel an Google weiter und streamt die Antwort zurück', async () => {
+    const r = await call(server, path, { auth: 'ich:geheim', method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"contents":[]}' });
+    expect(r.status).toBe(200);
+    expect(r.body).toContain('data: {"candidates":[]}');
+    expect(upstream.at(-1)).toEqual({
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse',
+      key: 'server-key',
+      body: '{"contents":[]}',
+    });
+  });
+
+  it('lässt nur bekannte Pfade, eigene Herkunft und Login durch', async () => {
+    const before = upstream.length;
+    const post = (p: string, headers: Record<string, string> = { 'content-type': 'application/json' }, auth = 'ich:geheim') => call(server, p, { auth, method: 'POST', headers, body: '{}' });
+    expect((await post('/api/gemini/v1beta/models/gemini-3.8-flash:countTokens')).status).toBe(404);
+    expect((await post('/api/gemini/v1beta/models/../../v1/files')).status).toBe(404);
+    expect((await post('/api/gemini/v1beta/models/other-model:generateContent')).status).toBe(404);
+    expect((await post(path, { 'content-type': 'application/json', origin: 'https://boese.example' })).status).toBe(403);
+    expect((await post(path, { 'content-type': 'application/json' }, 'ich:falsch')).status).toBe(401);
+    expect(upstream.length).toBe(before);
   });
 });
 

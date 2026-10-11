@@ -448,6 +448,7 @@ function ImportPanel() {
     if (settingsRaw.state) {
       // Schlüssel nicht mit exportieren
       settingsRaw.state.aiApiKey = '';
+      settingsRaw.state.geminiApiKey = '';
       settingsRaw.state.googleApiKey = '';
     }
     const lib = useLibrary.getState();
@@ -483,8 +484,9 @@ function ImportPanel() {
       if (d.wishlist?.items) useWishlist.setState({ items: d.wishlist.items as never });
       if (d.signals?.signals) useSignals.setState({ signals: d.signals.signals as never });
       if (d.settings) {
-        const { aiApiKey: _a, googleApiKey: _g, ...rest } = d.settings;
+        const { aiApiKey: _a, geminiApiKey: _k, googleApiKey: _g, ...rest } = d.settings;
         void _a;
+        void _k;
         void _g;
         useSettings.getState().set(rest as never);
       }

@@ -6,6 +6,7 @@
  *                              (Goodreads erlaubt keinen direkten Browser-Zugriff/CORS)
  * - /api/anthropic/v1/...    → leitet Claude-Anfragen weiter und fügt den Schlüssel
  *                              aus ANTHROPIC_API_KEY hinzu, damit er nie im Browser landet
+ * - /api/gemini/v1beta/...   → dasselbe für Google Gemini (GEMINI_API_KEY)
  * - /api/sync                → gleicht Bibliothek, Merkliste & Co. zwischen Geräten ab
  *                              (nur wenn ein Datenordner eingerichtet ist, siehe syncStore.ts)
  *
@@ -22,9 +23,10 @@ type Next = (err?: unknown) => void;
 
 export interface LocalApiOptions {
   anthropicApiKey?: string;
+  geminiApiKey?: string;
   allowRemote?: boolean;
   /**
-   * Darf diese Anfrage den Claude-Schlüssel des Servers nutzen? Standard: nur vom
+   * Darf diese Anfrage die KI-Schlüssel des Servers nutzen? Standard: nur vom
    * eigenen Computer. Der Docker-Server erlaubt es nur angemeldeten Personen.
    */
   canUseAi?: (req: IncomingMessage) => boolean;
@@ -37,6 +39,8 @@ export interface LocalApiOptions {
 class RequestTooLarge extends Error {}
 
 const GOODREADS_SHELF = /^[a-z0-9_\-#%]{1,64}$/i;
+const GEMINI_PATH = /^\/v1beta\/models\/(gemini-[a-z0-9.-]{1,60}):(generateContent|streamGenerateContent)$/;
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com';
 
 function sendJson(res: ServerResponse, status: number, body: unknown, req?: IncomingMessage) {
   res.statusCode = status;
@@ -114,7 +118,9 @@ export function isSameOriginJson(req: IncomingMessage): boolean {
 }
 
 export function createLocalApiHandler(options: LocalApiOptions) {
-  const canUseAi = (req: IncomingMessage) => Boolean(options.anthropicApiKey) && (options.canUseAi ? options.canUseAi(req) : isLocalRequest(req));
+  const aiAllowed = (req: IncomingMessage) => (options.canUseAi ? options.canUseAi(req) : isLocalRequest(req));
+  const canUseAi = (req: IncomingMessage) => Boolean(options.anthropicApiKey) && aiAllowed(req);
+  const canUseGemini = (req: IncomingMessage) => Boolean(options.geminiApiKey) && aiAllowed(req);
   const userOf = (req: IncomingMessage) => options.userOf?.(req) ?? null;
   return async function handler(req: IncomingMessage, res: ServerResponse, next: Next) {
     const rawUrl = req.url ?? '';
@@ -127,7 +133,7 @@ export function createLocalApiHandler(options: LocalApiOptions) {
 
     try {
       if (url.pathname === '/api/status') {
-        return sendJson(res, 200, { goodreads: true, ai: canUseAi(req), sync: Boolean(options.sync), user: userOf(req) });
+        return sendJson(res, 200, { goodreads: true, ai: canUseAi(req), gemini: canUseGemini(req), sync: Boolean(options.sync), user: userOf(req) });
       }
 
       if (url.pathname === '/api/sync') {
@@ -187,6 +193,30 @@ export function createLocalApiHandler(options: LocalApiOptions) {
             res.setHeader(key, value);
           }
         });
+        if (!upstream.body) return res.end();
+        Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream).pipe(res);
+        return;
+      }
+
+      if (url.pathname.startsWith('/api/gemini/')) {
+        if (!options.geminiApiKey) return sendJson(res, 503, { error: 'GEMINI_API_KEY ist auf dem Server nicht gesetzt.' });
+        if (!aiAllowed(req)) {
+          return sendJson(res, 403, { error: 'Den Gemini-Schlüssel des Servers dürfen nur angemeldete Personen nutzen (LESEKOMPASS_AUTH setzen).' });
+        }
+        if (!isSameOriginJson(req)) return sendJson(res, 403, { error: 'Anfrage von fremder Herkunft abgelehnt.' });
+        const path = url.pathname.slice('/api/gemini'.length);
+        if (req.method !== 'POST' || !GEMINI_PATH.test(path)) return sendJson(res, 404, { error: 'Nicht unterstützter Endpunkt' });
+        const body = await readBody(req);
+        const qs = url.searchParams.get('alt') === 'sse' ? '?alt=sse' : '';
+        const upstream = await fetch(`${GEMINI_BASE}${path}${qs}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': options.geminiApiKey },
+          body: new Uint8Array(body),
+        });
+        res.statusCode = upstream.status;
+        const type = upstream.headers.get('content-type');
+        if (type) res.setHeader('content-type', type);
+        res.setHeader('cache-control', 'no-store');
         if (!upstream.body) return res.end();
         Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream).pipe(res);
         return;

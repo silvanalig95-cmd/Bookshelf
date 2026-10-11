@@ -10,6 +10,7 @@
  *   LESEKOMPASS_HOST   Adresse (Standard 127.0.0.1; im Container 0.0.0.0)
  *   LESEKOMPASS_AUTH   Login, z. B. "ich:langes-passwort" – mehrere mit ";" getrennt
  *   ANTHROPIC_API_KEY  optionaler Claude-Schlüssel (nur für angemeldete Personen nutzbar)
+ *   GEMINI_API_KEY     optionaler Gemini-Schlüssel von Google AI Studio (ebenso)
  *   LESEKOMPASS_DIST   Ordner mit der gebauten App (Standard ../dist)
  *   LESEKOMPASS_DATA   Ordner für die synchronisierten Daten (Standard $LESEKOMPASS_HOME/data;
  *                      ohne beides gibt es keine Synchronisation)
@@ -53,6 +54,7 @@ export interface ServerConfig {
   /** name → Passwort */
   users: Map<string, string>;
   anthropicApiKey?: string;
+  geminiApiKey?: string;
   /** Ordner für die Geräte-Synchronisation (fehlt = keine Synchronisation). */
   dataDir?: string;
 }
@@ -96,6 +98,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ServerConfi
     version: readVersion(),
     users: parseUsers(env.LESEKOMPASS_AUTH),
     anthropicApiKey: env.ANTHROPIC_API_KEY?.trim() || undefined,
+    geminiApiKey: env.GEMINI_API_KEY?.trim() || undefined,
     dataDir: env.LESEKOMPASS_DATA ? resolve(env.LESEKOMPASS_DATA) : env.LESEKOMPASS_HOME ? join(resolve(env.LESEKOMPASS_HOME), 'data') : undefined,
   };
 }
@@ -234,6 +237,7 @@ export function createAppServer(cfg: ServerConfig): Server {
   const failures: Failures = new Map();
   const api = createLocalApiHandler({
     anthropicApiKey: cfg.anthropicApiKey,
+    geminiApiKey: cfg.geminiApiKey,
     allowRemote: true,
     // Den Server-Schlüssel nur mit Login (oder direkt auf diesem Rechner) freigeben
     canUseAi: (req) => cfg.users.size > 0 || isLocalRequest(req),
@@ -343,9 +347,11 @@ async function main() {
   server.listen(cfg.port, cfg.host, () => {
     console.log(`Lesekompass ${cfg.version} (Build ${cfg.build}) läuft auf http://${cfg.host === '0.0.0.0' ? 'localhost' : cfg.host}:${cfg.port}/`);
     if (cfg.users.size) console.log(`Login aktiv für: ${Array.from(cfg.users.keys()).join(', ')}`);
-    else if (!isLoopback(cfg.host)) console.log('Hinweis: kein Login gesetzt (LESEKOMPASS_AUTH). Die App ist im Netzwerk offen; der Claude-Schlüssel des Servers bleibt gesperrt.');
+    else if (!isLoopback(cfg.host)) console.log('Hinweis: kein Login gesetzt (LESEKOMPASS_AUTH). Die App ist im Netzwerk offen; die KI-Schlüssel des Servers bleiben gesperrt.');
     console.log(cfg.dataDir ? `Geräte-Synchronisation aktiv – Daten in ${cfg.dataDir}` : 'Geräte-Synchronisation aus (LESEKOMPASS_DATA nicht gesetzt).');
-    if (cfg.anthropicApiKey) console.log(cfg.users.size ? 'Claude-Schlüssel des Servers aktiv.' : 'Claude-Schlüssel gesetzt, aber ohne Login nur auf diesem Rechner selbst nutzbar.');
+    for (const [name, key] of [['Claude', cfg.anthropicApiKey], ['Gemini', cfg.geminiApiKey]] as const) {
+      if (key) console.log(cfg.users.size ? `${name}-Schlüssel des Servers aktiv.` : `${name}-Schlüssel gesetzt, aber ohne Login nur auf diesem Rechner selbst nutzbar.`);
+    }
   });
   const stop = () => server.close(() => process.exit(0));
   process.on('SIGTERM', stop);

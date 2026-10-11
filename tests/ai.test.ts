@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AiRecommendationSchema, parseBookRefs, readingContext } from '../src/lib/ai';
+import { AiRecommendationSchema, parseBookRefs, readingContext } from '../src/lib/aiPrompts';
 import { entry } from './helpers';
 
 describe('KI-Hilfen', () => {

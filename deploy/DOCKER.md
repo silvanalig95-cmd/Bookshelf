@@ -14,6 +14,20 @@ Deine Bibliothek, Merkliste und Einstellungen liegen dabei auf dem Server: **Han
 
 Die beiden Container sind völlig getrennt: Du kannst den einen neu bauen oder stoppen, ohne den anderen zu berühren.
 
+### Zwei Apps auf einem PC – warum sie sich nicht in die Quere kommen
+
+Beide Apps laufen auf demselben PC, also unter derselben IP-Adresse – aber an verschiedenen **Ports** (wie zwei Wohnungen im selben Haus):
+
+| Adresse | führt zu |
+|---|---|
+| `http://PCNAME/` (ohne Zahl = Port 80) | Olympus (Yoga) |
+| `http://PCNAME:8080/` | Lesekompass |
+
+* **Doppelt belegen geht gar nicht:** Ist ein Port schon besetzt, startet Docker den zweiten Container nicht und meldet `port is already allocated`. Es kann also nie passieren, dass unter einer Adresse plötzlich die falsche App erscheint.
+* **Nachsehen:** Docker Desktop → *Containers* → Spalte *Port(s)*: bei *unfurl* steht `80:…`, bei *lesekompass* `8080:8080`. Oder in PowerShell: `docker ps --format "table {{.Names}}\t{{.Ports}}"`.
+* **Bequem öffnen:** Auf jedem Gerät je ein Lesezeichen anlegen („Yoga“ → `http://PCNAME/`, „Bücher“ → `http://PCNAME:8080/`). Auf dem Handy im Browser-Menü „Zum Startbildschirm hinzufügen“ – dann hast du zwei App-Symbole.
+* **Mit Tailscale** bekommt jede App ihren eigenen HTTPS-Port (siehe unten) – auch dort bleiben sie getrennt.
+
 ---
 
 ## Einrichten (einmalig, ca. 10 Minuten)
@@ -107,13 +121,20 @@ Die Datei-Sicherung in der App gibt es weiterhin: **Bibliothek → Goodreads & D
 
 ---
 
-## Optional: KI mit Claude für alle Geräte
+## Optional: KI für alle Geräte (Gemini gratis oder Claude)
 
-Trag deinen Schlüssel in `deploy\lesekompass.env` ein (der Login muss gesetzt sein):
+Für „KI fragen“ und den KI-Bibliothekar. Am einfachsten und gratis ist **Google Gemini**:
+
+1. Auf <https://aistudio.google.com/apikey> mit deinem Google-Konto anmelden und **„API-Schlüssel erstellen“** klicken.
+2. Den Schlüssel in `deploy\lesekompass.env` eintragen (der Login muss gesetzt sein):
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=dein-schlüssel
 ```
+
+Der Gratis-Tarif hat Minuten- und Tageslimits (AI Studio zeigt sie unter *Rate limit*). Ist das Kontingent von *Gemini 3.8 Flash* aufgebraucht, antwortet automatisch *Gemini 3.5 Flash-Lite*; das Tageslimit setzt sich um 9 Uhr zurück. Im Gratis-Tarif darf Google die Anfragen – also auch deine Leseliste – zur Verbesserung seiner Produkte verwenden.
+
+Lieber **Claude** von Anthropic (kostet wenige Rappen pro Frage)? Dann stattdessen oder zusätzlich `ANTHROPIC_API_KEY=sk-ant-...` eintragen. Welcher Anbieter antwortet, wählst du in der App unter **Einstellungen → KI**.
 
 Dann übernehmen:
 
@@ -122,7 +143,7 @@ cd C:\Lesekompass
 docker compose -f deploy/docker-compose.yml up -d --force-recreate
 ```
 
-Der Schlüssel bleibt im Container; der Browser sieht ihn nie. Alle Geräte mit Login können „KI fragen“ und den KI-Bibliothekar nutzen.
+Der Schlüssel bleibt im Container; der Browser sieht ihn nie. Alle Geräte mit Login können „KI fragen“ und den KI-Bibliothekar nutzen. In der App unter **Einstellungen → KI** auf „Verbindung testen“ klicken.
 
 ---
 
@@ -161,7 +182,8 @@ Dann ist der Lesekompass unter `https://DEINPC.tailXXXX.ts.net:8443/` erreichbar
 | Browser fragt immer wieder nach dem Passwort | Name und Passwort genau wie in `LESEKOMPASS_AUTH` eingeben. Nach fünf Fehlversuchen eine Minute warten. |
 | Login geändert, aber alter gilt noch | `docker compose -f deploy/docker-compose.yml up -d --force-recreate` (ein einfacher Neustart liest die Datei nicht neu). |
 | Build in der Fusszeile ändert sich nicht | Logs ansehen (siehe oben). `konnte … nicht holen` = keine Verbindung zu GitHub; `NICHT aktualisiert` = diese Version wurde abgelehnt, die alte läuft weiter – Claude Bescheid geben. |
-| Statt „KI fragen“ steht „KI-Empfehlungen aktivieren“ | `ANTHROPIC_API_KEY` **und** `LESEKOMPASS_AUTH` setzen, dann `up -d --force-recreate`. Oder den Schlüssel in der App unter Einstellungen eintragen. |
+| Statt „KI fragen“ steht „KI-Empfehlungen aktivieren“ | `GEMINI_API_KEY` (oder `ANTHROPIC_API_KEY`) **und** `LESEKOMPASS_AUTH` setzen, dann `up -d --force-recreate`. Oder den Schlüssel in der App unter Einstellungen eintragen. |
+| „Gratis-Kontingent von Gemini aufgebraucht“ | Kurz warten (Minutenlimit) bzw. bis 9 Uhr (Tageslimit). Unter Einstellungen → KI „Gemini 3.5 Flash-Lite“ wählen – es hat ein grösseres Kontingent. |
 | Container startet immer wieder neu | `docker compose -f deploy/docker-compose.yml logs --tail 50` und die letzten Zeilen an Claude schicken. |
 | Unten steht „⚠️ Abgleich gestört“ | Einstellungen → Geräte abgleichen zeigt den Grund. Bei „Bitte neu anmelden“ die Seite neu laden. Sonst die Logs (siehe oben) an Claude schicken – deine Daten bleiben auf dem Gerät und gehen beim nächsten erfolgreichen Abgleich raus. |
 | Auf einem Gerät fehlt etwas | Einstellungen → Geräte abgleichen → **Alles neu vom Server holen**. |

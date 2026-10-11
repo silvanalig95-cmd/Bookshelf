@@ -5,6 +5,8 @@ import type { LanguagePreference, Region } from '../lib/types';
 
 export type Theme = 'auto' | 'light' | 'dark';
 export type AiModel = 'claude-opus-5-5' | 'claude-sonnet-5-5' | 'claude-haiku-5-5';
+export type GeminiModel = 'gemini-3.8-flash' | 'gemini-3.5-flash-lite';
+export type AiProvider = 'gemini' | 'claude';
 
 export interface SettingsState {
   region: Region;
@@ -13,9 +15,15 @@ export interface SettingsState {
   language: LanguagePreference;
   annasBase: string;
   googleApiKey: string;
+  /** Welche KI: Gemini (Google, mit Gratis-Kontingent) oder Claude (Anthropic). */
+  aiProvider: AiProvider;
   /** Claude-API-Schlüssel für den Direktzugriff aus dem Browser (optional). */
   aiApiKey: string;
+  /** Claude-Modell. */
   aiModel: AiModel;
+  /** Gemini-API-Schlüssel aus Google AI Studio für den Direktzugriff aus dem Browser (optional). */
+  geminiApiKey: string;
+  geminiModel: GeminiModel;
   theme: Theme;
   onboarded: boolean;
   goodreadsUserId: string;
@@ -30,8 +38,11 @@ export const useSettings = create<SettingsState>()(
       language: 'de-first',
       annasBase: ANNAS_ARCHIVE_MIRRORS[0],
       googleApiKey: '',
+      aiProvider: 'gemini',
       aiApiKey: '',
       aiModel: 'claude-opus-5-5',
+      geminiApiKey: '',
+      geminiModel: 'gemini-3.8-flash',
       theme: 'auto',
       onboarded: false,
       goodreadsUserId: '',

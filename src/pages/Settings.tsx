@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { aiAvailability, resetAiStatus, type AiVia } from '../lib/aiStatus';
+import { AI_MODEL_NAMES, aiAvailability, aiConfigFor, resetAiStatus, type AiAccess } from '../lib/aiStatus';
 import { localApiStatus, type LocalApiStatus } from '../lib/goodreads';
 import { annasArchiveUrl, ANNAS_ARCHIVE_MIRRORS } from '../lib/shops';
 import type { LanguagePreference, Region } from '../lib/types';
-import { useSettings, type AiModel, type Theme } from '../store/settings';
+import { useSettings, type AiModel, type AiProvider, type GeminiModel, type Theme } from '../store/settings';
 import { pullEverything, runSync, setSyncEnabled, useSync } from '../store/sync';
 import { toast } from '../store/ui';
 
@@ -25,6 +25,16 @@ const SHOPS: Record<Region, Array<{ id: string; label: string }>> = {
   ],
 };
 
+const PROVIDERS: Array<{ id: AiProvider; label: string }> = [
+  { id: 'gemini', label: '🆓 Google Gemini (gratis)' },
+  { id: 'claude', label: 'Claude (Anthropic)' },
+];
+
+const GEMINI_CHOICES: Array<{ id: GeminiModel; label: string; hint: string }> = [
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', hint: 'Beste Empfehlungen (Standard). Ist sein Gratis-Kontingent aufgebraucht, antwortet automatisch Flash-Lite.' },
+  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite', hint: 'Schneller, mit grösserem Gratis-Kontingent' },
+];
+
 const MODELS: Array<{ id: AiModel; label: string; hint: string }> = [
   { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', hint: 'Beste Empfehlungen (Standard) · ca. 5–15 Rappen pro Anfrage' },
   { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', hint: 'Schneller und günstiger · ca. 3–8 Rappen' },
@@ -37,7 +47,7 @@ export default function Settings() {
   const [server, setServer] = useState<LocalApiStatus>();
   const syncPhase = useSync((x) => x.phase);
   const syncing = syncPhase !== 'unavailable' && syncPhase !== 'off' && syncPhase !== 'checking';
-  const [ai, setAi] = useState<{ available: boolean; via?: AiVia }>({ available: false });
+  const [ai, setAi] = useState<AiAccess>({ available: false });
   const [testState, setTestState] = useState<string>('');
   const [showKey, setShowKey] = useState(false);
 
@@ -46,19 +56,30 @@ export default function Settings() {
   }, []);
   useEffect(() => {
     resetAiStatus();
-    aiAvailability(s.aiApiKey).then(setAi);
-  }, [s.aiApiKey]);
+    aiAvailability(s).then(setAi);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s.aiProvider, s.aiApiKey, s.geminiApiKey]);
   useEffect(() => {
     for (const id of ['ki', 'abgleich']) if (window.location.hash.includes(`#${id}`)) document.getElementById(id)?.scrollIntoView();
   }, []);
 
+  const providerName = (p?: AiProvider) => (p === 'claude' ? 'Claude' : 'Gemini');
+  const aiStatusText = !ai.available
+    ? s.aiProvider === 'gemini'
+      ? 'Noch nicht aktiv. Am sichersten liegt der Schlüssel auf dem Server: bei Docker als GEMINI_API_KEY (zusammen mit einem Login) in deploy/lesekompass.env. Oder unten im Browser eintragen.'
+      : 'Noch nicht aktiv. Am sichersten liegt der Schlüssel auf dem Server: bei Docker als ANTHROPIC_API_KEY (zusammen mit einem Login) in deploy/lesekompass.env. Oder unten im Browser eintragen.'
+    : `Aktiv: ${AI_MODEL_NAMES[aiConfigFor(ai, s)?.model ?? ''] ?? providerName(ai.provider)} – ${ai.via === 'server' ? 'mit dem Schlüssel des Servers (bleibt dort)' : 'mit dem Schlüssel aus diesem Browser'}.${
+        ai.provider !== s.aiProvider ? ` Für ${providerName(s.aiProvider)} fehlt noch ein Schlüssel, darum antwortet ${providerName(ai.provider)}.` : ''
+      }`;
+
   const testAi = async () => {
-    if (!ai.available || !ai.via) return;
+    const config = aiConfigFor(ai, s);
+    if (!config) return;
     setTestState('Teste …');
     try {
       const { aiRecommend } = await import('../lib/ai');
-      const r = await aiRecommend('ein kurzer, heiterer Roman für einen Sonntag', { via: ai.via, key: s.aiApiKey, model: s.aiModel }, 'Keine Angaben.', { count: 1 });
-      setTestState(`✅ Funktioniert! Testvorschlag: „${r.recommendations[0]?.title}“ von ${r.recommendations[0]?.author}`);
+      const r = await aiRecommend('ein kurzer, heiterer Roman für einen Sonntag', config, 'Keine Angaben.', { count: 1 });
+      setTestState(`✅ ${providerName(config.provider)} funktioniert! Testvorschlag: „${r.recommendations[0]?.title}“ von ${r.recommendations[0]?.author}${r.note ? ` (${r.note})` : ''}`);
     } catch (err) {
       const { aiErrorMessage } = await import('../lib/ai');
       setTestState(`❌ ${aiErrorMessage(err)}`);
@@ -186,57 +207,122 @@ export default function Settings() {
       </section>
 
       <section className="card" id="ki">
-        <h3>✨ KI-Empfehlungen mit Claude (optional)</h3>
+        <h3>✨ KI-Empfehlungen (optional)</h3>
         <p className="small">
-          Für „KI fragen“ in der Suche und den KI-Bibliothekar. Claude versteht Wünsche wie „wie X, aber düsterer und in Island“ und kennt deine gelesenen Bücher.
-          Du brauchst einen eigenen API-Schlüssel von{' '}
-          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">
-            console.anthropic.com ↗
-          </a>{' '}
-          (Abrechnung nach Verbrauch).
+          Für „KI fragen“ in der Suche und den KI-Bibliothekar. Die KI versteht Wünsche wie „wie X, aber düsterer und in Island“ und kennt deine gelesenen
+          Bücher.
         </p>
-        <div className={`notice ${ai.available ? 'teal' : ''}`} style={{ marginBottom: 14 }}>
-          <span className="notice-icon">{ai.available ? '✅' : 'ℹ️'}</span>
-          <span className="small">
-            {server?.ai
-              ? 'Der Server hat einen Claude-Schlüssel (ANTHROPIC_API_KEY) – er bleibt auf dem Server. Ein Browser-Schlüssel ist nicht nötig.'
-              : ai.available
-                ? 'Aktiv mit dem Schlüssel aus diesem Browser.'
-                : 'Noch nicht aktiv. Am sichersten liegt der Schlüssel auf dem Server: bei Docker als ANTHROPIC_API_KEY (zusammen mit einem Login) in deploy/lesekompass.env, sonst in der Datei .env – danach neu starten. Alternativ hier eintragen (wird nur in diesem Browser gespeichert).'}
-          </span>
-        </div>
-        {!server?.ai && (
-          <div className="field">
-            <label htmlFor="ai-key">Claude-API-Schlüssel (Browser)</label>
-            <div className="input-group">
-              <input
-                id="ai-key"
-                className="input"
-                type={showKey ? 'text' : 'password'}
-                autoComplete="off"
-                placeholder="sk-ant-…"
-                value={s.aiApiKey}
-                onChange={(e) => s.set({ aiApiKey: e.target.value.trim() })}
-              />
-              <button className="btn" onClick={() => setShowKey((x) => !x)}>
-                {showKey ? 'Verbergen' : 'Zeigen'}
-              </button>
-            </div>
-          </div>
-        )}
         <div className="field">
-          <span className="label">Modell</span>
-          <div className="stack" style={{ gap: 6 }}>
-            {MODELS.map((m) => (
-              <label key={m.id} className="toggle">
-                <input type="radio" name="model" checked={s.aiModel === m.id} onChange={() => s.set({ aiModel: m.id })} />
-                <span>
-                  <b>{m.label}</b> <span className="muted small">– {m.hint}</span>
-                </span>
-              </label>
+          <span className="label">Anbieter</span>
+          <div className="segmented">
+            {PROVIDERS.map((p) => (
+              <button key={p.id} className={s.aiProvider === p.id ? 'on' : ''} onClick={() => s.set({ aiProvider: p.id })}>
+                {p.label}
+              </button>
             ))}
           </div>
         </div>
+        <div className={`notice ${ai.available ? 'teal' : ''}`} style={{ marginBottom: 14 }}>
+          <span className="notice-icon">{ai.available ? '✅' : 'ℹ️'}</span>
+          <span className="small">{aiStatusText}</span>
+        </div>
+
+        {s.aiProvider === 'gemini' ? (
+          <>
+            <p className="small">
+              {!server?.gemini && (
+                <>
+                  <b>Gratis-Schlüssel in zwei Minuten:</b> auf{' '}
+                  <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">
+                    aistudio.google.com/apikey ↗
+                  </a>{' '}
+                  mit dem Google-Konto anmelden, „API-Schlüssel erstellen“ und den Schlüssel hier einfügen.{' '}
+                </>
+              )}
+              Der Gratis-Tarif hat Minuten- und Tageslimits (
+              <a href="https://aistudio.google.com/rate-limit" target="_blank" rel="noopener noreferrer">
+                deine Limits ↗
+              </a>
+              ). Gut zu wissen: Im Gratis-Tarif darf Google die Anfragen – also auch deine Leseliste – zur Verbesserung seiner Produkte verwenden.
+            </p>
+            {!server?.gemini && (
+              <div className="field">
+                <label htmlFor="gemini-key">Gemini-API-Schlüssel (Browser)</label>
+                <div className="input-group">
+                  <input
+                    id="gemini-key"
+                    className="input"
+                    type={showKey ? 'text' : 'password'}
+                    autoComplete="off"
+                    placeholder="AIza… oder AQ.…"
+                    value={s.geminiApiKey}
+                    onChange={(e) => s.set({ geminiApiKey: e.target.value.trim() })}
+                  />
+                  <button className="btn" onClick={() => setShowKey((x) => !x)}>
+                    {showKey ? 'Verbergen' : 'Zeigen'}
+                  </button>
+                </div>
+                <span className="help">Wird nur in diesem Browser gespeichert. Für alle Geräte auf einmal: GEMINI_API_KEY auf dem Server (siehe deploy/DOCKER.md).</span>
+              </div>
+            )}
+            <div className="field">
+              <span className="label">Modell</span>
+              <div className="stack" style={{ gap: 6 }}>
+                {GEMINI_CHOICES.map((m) => (
+                  <label key={m.id} className="toggle">
+                    <input type="radio" name="gemini-model" checked={s.geminiModel === m.id} onChange={() => s.set({ geminiModel: m.id })} />
+                    <span>
+                      <b>{m.label}</b> <span className="muted small">– {m.hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="small">
+              Du brauchst einen eigenen API-Schlüssel von{' '}
+              <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">
+                console.anthropic.com ↗
+              </a>{' '}
+              (Abrechnung nach Verbrauch).
+            </p>
+            {!server?.ai && (
+              <div className="field">
+                <label htmlFor="ai-key">Claude-API-Schlüssel (Browser)</label>
+                <div className="input-group">
+                  <input
+                    id="ai-key"
+                    className="input"
+                    type={showKey ? 'text' : 'password'}
+                    autoComplete="off"
+                    placeholder="sk-ant-…"
+                    value={s.aiApiKey}
+                    onChange={(e) => s.set({ aiApiKey: e.target.value.trim() })}
+                  />
+                  <button className="btn" onClick={() => setShowKey((x) => !x)}>
+                    {showKey ? 'Verbergen' : 'Zeigen'}
+                  </button>
+                </div>
+                <span className="help">Wird nur in diesem Browser gespeichert. Für alle Geräte auf einmal: ANTHROPIC_API_KEY auf dem Server (siehe deploy/DOCKER.md).</span>
+              </div>
+            )}
+            <div className="field">
+              <span className="label">Modell</span>
+              <div className="stack" style={{ gap: 6 }}>
+                {MODELS.map((m) => (
+                  <label key={m.id} className="toggle">
+                    <input type="radio" name="model" checked={s.aiModel === m.id} onChange={() => s.set({ aiModel: m.id })} />
+                    <span>
+                      <b>{m.label}</b> <span className="muted small">– {m.hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
         <div className="btn-row">
           <button className="btn" onClick={testAi} disabled={!ai.available}>
             Verbindung testen
@@ -267,7 +353,7 @@ export default function Settings() {
           {server === undefined
             ? 'Prüfe …'
             : server.goodreads
-              ? `✅ Läuft – Goodreads-Profil-Import ist verfügbar${server.ai ? ', ebenso der Claude-Schlüssel des Servers' : ''}${server.sync ? ' und der Geräte-Abgleich' : ''}. Version ${__VERSION__}, Build ${__BUILD__.slice(0, 7)}.`
+              ? `✅ Läuft – Goodreads-Profil-Import ist verfügbar${server.gemini ? ', ebenso der Gemini-Schlüssel des Servers' : ''}${server.ai ? ', der Claude-Schlüssel des Servers' : ''}${server.sync ? ' und der Geräte-Abgleich' : ''}. Version ${__VERSION__}, Build ${__BUILD__.slice(0, 7)}.`
               : 'Nicht erreichbar (statische Installation). Goodreads geht dann per CSV-Export, Claude per Browser-Schlüssel.'}
         </p>
       </section>

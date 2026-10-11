@@ -34,7 +34,7 @@ interface SyncState {
 
 export const useSync = create<SyncState>(() => ({ phase: 'checking', pending: 0, settled: false }));
 
-export const SYNCED_SETTINGS = ['region', 'preferredShop', 'language', 'annasBase', 'goodreadsUserId', 'aiModel'] as const;
+export const SYNCED_SETTINGS = ['region', 'preferredShop', 'language', 'annasBase', 'goodreadsUserId', 'aiProvider', 'aiModel', 'geminiModel'] as const;
 type SyncedSetting = (typeof SYNCED_SETTINGS)[number];
 
 const META_KEY = 'lesekompass.sync';

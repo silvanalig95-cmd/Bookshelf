@@ -2,7 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from '
 import { Link, useSearchParams } from 'react-router-dom';
 import { bookPath } from '../components/BookCard';
 import { Cover } from '../components/Cover';
-import { aiAvailability, aiChat, aiErrorMessage, parseBookRefs, readingContext, type AiVia, type ChatMessage } from '../lib/ai';
+import { AI_MODEL_NAMES, aiAvailability, aiChat, aiConfigFor, aiErrorMessage, parseBookRefs, readingContext, type ChatTurn } from '../lib/ai';
+import type { AiAccess } from '../lib/aiStatus';
 import { useLibraryEntries, useProfile } from '../lib/hooks';
 import { resolveBook } from '../lib/resolve';
 import type { Book } from '../lib/types';
@@ -13,23 +14,19 @@ import { useWishlist } from '../store/wishlist';
 interface Turn {
   role: 'user' | 'assistant';
   text: string;
+  /** Hinweis zur Antwort (z. B. anderes Modell wegen Gratis-Limit). */
+  note?: string;
 }
 
 interface Conversation {
-  /** Verlauf für die API – Antworten vollständig (inkl. Denkblöcke), nur angehängt. */
-  api: ChatMessage[];
+  /** Verlauf für die KI – Antworten mit Rohform (Denkblöcke/-signaturen), nur angehängt. */
+  api: ChatTurn[];
   turns: Turn[];
   /** Lesekontext, festgehalten zu Beginn des Gesprächs. */
   context: string;
 }
 
 const STORAGE_KEY = 'lesekompass.chat';
-
-const MODEL_NAMES: Record<string, string> = {
-  'claude-opus-5-5': 'Claude Opus 5.5',
-  'claude-sonnet-5-5': 'Claude Sonnet 5.5',
-  'claude-haiku-5-5': 'Claude Haiku 5.5',
-};
 
 const SUGGESTIONS = [
   'Was soll ich als Nächstes lesen?',
@@ -43,7 +40,9 @@ const SUGGESTIONS = [
 function loadConversation(): Conversation | undefined {
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Conversation) : undefined;
+    const conv = raw ? (JSON.parse(raw) as Conversation) : undefined;
+    // Gespräche aus einer älteren Version (anderes Format) nicht weiterführen
+    return conv && Array.isArray(conv.api) && conv.api.every((t) => typeof t.text === 'string') ? conv : undefined;
   } catch {
     return undefined;
   }
@@ -99,7 +98,7 @@ export default function Librarian() {
   const entries = useLibraryEntries();
   const profile = useProfile();
   const [params, setParams] = useSearchParams();
-  const [ai, setAi] = useState<{ available: boolean; via?: AiVia } | undefined>();
+  const [ai, setAi] = useState<AiAccess | undefined>();
   const [conv, setConv] = useState<Conversation | undefined>(loadConversation);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState('');
@@ -112,8 +111,11 @@ export default function Librarian() {
   const wish = useWishlist((s) => s.items);
 
   useEffect(() => {
-    aiAvailability(settings.aiApiKey).then(setAi);
-  }, [settings.aiApiKey]);
+    aiAvailability(settings).then(setAi);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.aiProvider, settings.aiApiKey, settings.geminiApiKey]);
+  const config = ai ? aiConfigFor(ai, settings) : undefined;
+  const aiName = config?.provider === 'claude' ? 'Claude' : 'Gemini';
 
   useEffect(() => {
     const buch = params.get('buch');
@@ -156,10 +158,10 @@ export default function Librarian() {
   }, [refs, resolved]);
 
   const send = async (text: string) => {
-    if (!text.trim() || busy || !ai?.available || !ai.via) return;
+    if (!text.trim() || busy || !config) return;
     setError('');
     const base: Conversation = conv ?? { api: [], turns: [], context: readingContext(entries, profile) };
-    const api: ChatMessage[] = [...base.api, { role: 'user', content: text.trim() }];
+    const api: ChatTurn[] = [...base.api, { role: 'user', text: text.trim() }];
     const turns: Turn[] = [...base.turns, { role: 'user', text: text.trim() }];
     setConv({ ...base, api, turns });
     setInput('');
@@ -168,9 +170,9 @@ export default function Librarian() {
     controller.current = new AbortController();
     try {
       let acc = '';
-      const message = await aiChat(
+      const reply = await aiChat(
         api,
-        { via: ai.via, key: settings.aiApiKey, model: settings.aiModel },
+        config,
         base.context,
         (delta) => {
           acc += delta;
@@ -178,11 +180,10 @@ export default function Librarian() {
         },
         controller.current.signal,
       );
-      const finalText = message.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
       setConv({
         ...base,
-        api: [...api, { role: 'assistant', content: message.content as ChatMessage['content'] }],
-        turns: [...turns, { role: 'assistant', text: finalText }],
+        api: [...api, { role: 'assistant', text: reply.text, provider: reply.provider, raw: reply.raw }],
+        turns: [...turns, { role: 'assistant', text: reply.text, note: reply.note }],
       });
     } catch (err) {
       setError(aiErrorMessage(err));
@@ -222,10 +223,13 @@ export default function Librarian() {
         </div>
         <div className="card">
           <p>
-            Der KI-Bibliothekar nutzt <b>Claude</b> von Anthropic. Er kennt deine gelesenen Bücher und Bewertungen, versteht Wünsche wie „wie Der Schatten des
-            Windes, aber in Wien und kürzer“ und schlägt Bücher vor, die du direkt öffnen, merken und kaufen kannst.
+            Der KI-Bibliothekar kennt deine gelesenen Bücher und Bewertungen, versteht Wünsche wie „wie Der Schatten des Windes, aber in Wien und kürzer“ und
+            schlägt Bücher vor, die du direkt öffnen, merken und kaufen kannst.
           </p>
-          <p className="small muted">Dafür brauchst du einen eigenen API-Schlüssel (Abrechnung nach Verbrauch, typisch wenige Rappen pro Frage).</p>
+          <p className="small muted">
+            Dafür brauchst du einen API-Schlüssel: <b>Google Gemini</b> geht gratis (mit Tageslimit), <b>Claude</b> von Anthropic kostet wenige Rappen pro
+            Frage.
+          </p>
           <Link to="/einstellungen#ki" className="btn btn-primary">
             ✨ KI in den Einstellungen aktivieren
           </Link>
@@ -250,7 +254,7 @@ export default function Librarian() {
           <p className="eyebrow">KI-Bibliothekar</p>
           <h1 className="mb-0">Worauf hast du Lust?</h1>
           <p className="small muted mt-1">
-            {MODEL_NAMES[settings.aiModel]} ·
+            {AI_MODEL_NAMES[config?.model ?? ''] ?? aiName} ·
             kennt {entries.filter((e) => e.shelf === 'read').length} deiner gelesenen Bücher
           </p>
         </div>
@@ -285,6 +289,7 @@ export default function Librarian() {
         {turns.map((t, i) => (
           <div key={i} className={`bubble ${t.role}`}>
             {t.role === 'assistant' ? <Markdown text={t.text} onBook={bookChip} /> : <p>{t.text}</p>}
+            {t.note && <p className="tiny muted mb-0">ℹ️ {t.note}</p>}
           </div>
         ))}
         {busy && (
@@ -293,7 +298,7 @@ export default function Librarian() {
               <Markdown text={streaming} onBook={(title) => <span className="book-ref">📖 {title}</span>} />
             ) : (
               <p className="muted">
-                <span className="spinner" style={{ width: 16, height: 16, verticalAlign: 'middle' }} /> Claude blättert in deinen Regalen …
+                <span className="spinner" style={{ width: 16, height: 16, verticalAlign: 'middle' }} /> {aiName} blättert in deinen Regalen …
               </p>
             )}
           </div>

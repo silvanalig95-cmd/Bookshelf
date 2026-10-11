@@ -185,7 +185,10 @@ export async function fetchGoodreadsShelves(
 
 export interface LocalApiStatus {
   goodreads: boolean;
+  /** Claude-Schlüssel des Servers nutzbar. */
   ai: boolean;
+  /** Gemini-Schlüssel des Servers nutzbar. */
+  gemini: boolean;
   /** Geräte-Synchronisation verfügbar. */
   sync: boolean;
   /** Angemeldeter Name (null = ohne Login). */
@@ -193,7 +196,7 @@ export interface LocalApiStatus {
 }
 
 export async function localApiStatus(): Promise<LocalApiStatus> {
-  const none: LocalApiStatus = { goodreads: false, ai: false, sync: false, user: null };
+  const none: LocalApiStatus = { goodreads: false, ai: false, gemini: false, sync: false, user: null };
   try {
     const res = await fetch('./api/status', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
     if (!res.ok || !res.headers.get('content-type')?.includes('json')) return none;
