@@ -91,8 +91,9 @@ export function signalWeight(s: TasteSignal): number {
   switch (s.verdict) {
     case 'like':
       return 1.2;
+    // Merken = „will ich lesen“ – stärker als nur „klingt spannend“
     case 'save':
-      return 0.9;
+      return 1.5;
     case 'read':
       return 0.8;
     case 'dislike':

@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { bookPath } from '../components/BookCard';
 import { Cover } from '../components/Cover';
+import { Icon } from '../components/Icon';
 import { Stars } from '../components/Stars';
 import { ageWeight, famePrior, hasGerman } from '../lib/discovery';
 import { useAsync, useProfile, useReadIndex } from '../lib/hooks';
 import { settle } from '../lib/http';
 import { docToBook, getWork, isbnCoverUrl, searchWorks } from '../lib/openLibrary';
 import { isProfileUsable } from '../lib/profile';
-import { buildSwipeModel, contentFit, interleave, planDeck, summarizeModel, type DeckSlot } from '../lib/swipeModel';
+import { bookFeatures, buildSwipeModel, contentFit, interleave, planDeck, summarizeModel, SWIPE_GENRES, type DeckSlot } from '../lib/swipeModel';
 import { displaySubjects } from '../lib/taxonomy';
 import { shuffle, solrPhrase, truncate } from '../lib/text';
 import type { Book, SignalVerdict } from '../lib/types';
@@ -39,6 +40,8 @@ export default function Swipe() {
   const record = useSignals((s) => s.record);
   const signals = useSignals((s) => s.signals);
   const addWish = useWishlist((s) => s.add);
+  const toggleWish = useWishlist((s) => s.toggle);
+  const wishItems = useWishlist((s) => s.items);
   const openRating = useUi((s) => s.openRating);
   const profile = useProfile();
   const readIndex = useReadIndex();
@@ -85,7 +88,13 @@ export default function Swipe() {
       ]);
 
       const usable = (b: Book) => !seen.current.has(b.id) && !readIndex.has(b) && Boolean(b.coverId || b.coverUrl);
-      const pick = (books: Book[], count: number, fitWeight: number, why: string): DeckCard[] => {
+      // Beschriftung nach dem Genre des Buchs selbst – die Suche nach einem Genre liefert auch Verwandtes
+      const genreLabel = (b: Book, fallback: string) => {
+        const own = bookFeatures(b).genres;
+        if (own.includes(fallback)) return SWIPE_GENRES.find((g) => g.id === fallback)!.label;
+        return SWIPE_GENRES.find((g) => own.includes(g.id))?.label ?? SWIPE_GENRES.find((g) => g.id === fallback)?.label ?? '';
+      };
+      const pick = (books: Book[], count: number, fitWeight: number, why: (b: Book) => string): DeckCard[] => {
         const ranked = books
           .filter(usable)
           .filter((b, i, arr) => arr.findIndex((x) => x.id === b.id) === i)
@@ -94,12 +103,12 @@ export default function Swipe() {
           .sort((a, b) => b.s - a.s)
           .slice(0, count);
         for (const { b } of ranked) seen.current.add(b.id);
-        return ranked.map(({ b }) => ({ book: b, why }));
+        return ranked.map(({ b }) => ({ book: b, why: why(b) }));
       };
       const lists = slots.map((slot, i) =>
-        pick(slotBooks[i], slot.count, slot.kind === 'neuland' ? 0.4 : 1, slot.kind === 'neuland' ? `Neuland: ${slot.genre.label}` : slot.genre.label),
+        pick(slotBooks[i], slot.count, slot.kind === 'neuland' ? 0.4 : 1, (b) => (slot.kind === 'neuland' ? 'Neuland: ' : '') + genreLabel(b, slot.genre.id)),
       );
-      if (libraryBooks.length) lists.push(pick(libraryBooks, 2, 1, 'passt zu deinem Profil'));
+      if (libraryBooks.length) lists.push(pick(libraryBooks, 2, 1, () => 'passt zu deinem Profil'));
       setDeck((d) => [...d, ...interleave(shuffle(lists))]);
     } finally {
       fetching.current = false;
@@ -188,8 +197,9 @@ export default function Swipe() {
       <div className="page-head">
         <h1>Bücher-Swipe</h1>
         <p>
-          Rechts = klingt spannend, links = nicht meins, hoch = merken. Jede Entscheidung wird gespeichert und fliesst in den nächsten Stapel und in alle Empfehlungen
-          ein. Tastatur: <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>
+          Rechts = <b>klingt spannend</b> (mehr in diese Richtung), hoch = <b>merken</b> (dieses Buch will ich lesen – kommt zusätzlich auf die Merkliste),
+          links = nicht meins. Jede Entscheidung wird gespeichert und fliesst in den nächsten Stapel und in alle Empfehlungen ein. Tastatur: <kbd>←</kbd>{' '}
+          <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>
         </p>
       </div>
 
@@ -222,18 +232,30 @@ export default function Swipe() {
             </div>
           )}
           <div className="swipe-actions">
-            <button className="swipe-btn nope" onClick={() => decide('dislike')} title="Nicht meins (←)" aria-label="Nicht meins">
-              ✕
-            </button>
-            <button className="swipe-btn read" onClick={() => decide('read')} title="Schon gelesen (↓)" aria-label="Schon gelesen">
-              ✓
-            </button>
-            <button className="swipe-btn save" onClick={() => decide('save')} title="Merken (↑)" aria-label="Merken">
-              ★
-            </button>
-            <button className="swipe-btn like" onClick={() => decide('like')} title="Klingt spannend (→)" aria-label="Klingt spannend">
-              ♥
-            </button>
+            <span className="swipe-action">
+              <button className="swipe-btn nope" onClick={() => decide('dislike')} title="Nicht meins (←)" aria-label="Nicht meins">
+                ✕
+              </button>
+              Nicht meins
+            </span>
+            <span className="swipe-action">
+              <button className="swipe-btn read" onClick={() => decide('read')} title="Schon gelesen (↓)" aria-label="Schon gelesen">
+                ✓
+              </button>
+              Gelesen
+            </span>
+            <span className="swipe-action">
+              <button className="swipe-btn save" onClick={() => decide('save')} title="Merken – auf die Merkliste (↑)" aria-label="Merken">
+                <Icon name="heart" size={24} />
+              </button>
+              Merken
+            </span>
+            <span className="swipe-action">
+              <button className="swipe-btn like" onClick={() => decide('like')} title="Klingt spannend – mehr davon (→)" aria-label="Klingt spannend">
+                <Icon name="thumb" size={26} />
+              </button>
+              Spannend
+            </span>
           </div>
         </div>
 
@@ -283,16 +305,35 @@ export default function Swipe() {
             <h3>{session.liked.length ? 'Deine Treffer' : 'Zuletzt gemocht'}</h3>
             {session.liked.length ? (
               <div className="stack" style={{ gap: 8 }}>
-                {session.liked.slice(0, 8).map((b) => (
-                  <Link key={b.id} to={bookPath(b)} onClick={() => rememberBook(b)} className="row" style={{ color: 'var(--ink)' }}>
-                    <Cover title={b.title} coverId={b.coverId} size="S" style={{ width: 34 }} />
-                    <span className="small" style={{ lineHeight: 1.25 }}>
-                      <b>{b.title}</b>
-                      <br />
-                      <span className="muted">{b.authors[0]}</span>
-                    </span>
-                  </Link>
-                ))}
+                {session.liked.slice(0, 8).map((b) => {
+                  const saved = Boolean(wishItems[b.id]);
+                  return (
+                    <div key={b.id} className="row" style={{ gap: 10 }}>
+                      <Link to={bookPath(b)} onClick={() => rememberBook(b)} className="row" style={{ color: 'var(--ink)', flex: 1, minWidth: 0 }}>
+                        <Cover title={b.title} coverId={b.coverId} size="S" style={{ width: 34 }} />
+                        <span className="small" style={{ lineHeight: 1.25 }}>
+                          <b>{b.title}</b>
+                          <br />
+                          <span className="muted">{b.authors[0]}</span>
+                        </span>
+                      </Link>
+                      {/* „Spannend“ lässt sich hier nachträglich zu „Merken“ machen – und umgekehrt */}
+                      <button
+                        className={`mini-btn ${saved ? 'on' : ''}`}
+                        style={{ boxShadow: 'none', border: '1px solid var(--line)', flexShrink: 0 }}
+                        title={saved ? 'Von der Merkliste nehmen' : 'Doch merken'}
+                        aria-pressed={saved}
+                        onClick={() => {
+                          const added = toggleWish(b, 'Swipe');
+                          record(b, added ? 'save' : 'like');
+                          toast(added ? `„${b.title}“ gemerkt` : 'Von der Merkliste entfernt');
+                        }}
+                      >
+                        {saved ? '♥' : '♡'}
+                      </button>
+                    </div>
+                  );
+                })}
                 <Link to="/fuer-dich" className="btn btn-sm btn-soft">
                   Passende Empfehlungen →
                 </Link>
