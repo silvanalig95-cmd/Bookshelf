@@ -70,7 +70,13 @@ export interface SwipeModel {
   authors: Map<string, AuthorStat>;
   /** Positiv gewichtete Konzepte je Genre – woraus „mehr davon“-Anfragen gebaut werden. */
   genreConcepts: Map<string, Map<string, number>>;
+  /** Zuspruch zu neueren (ab 1990) und älteren Büchern. */
+  eras: Record<Era, { pos: number; neg: number }>;
 }
+
+export type Era = 'neu' | 'alt';
+export const MODERN_FROM = 1990;
+export const eraOf = (year: number): Era => (year >= MODERN_FROM ? 'neu' : 'alt');
 
 interface Features {
   genres: string[];
@@ -128,6 +134,7 @@ export function buildSwipeModel(signals: TasteSignal[], now = Date.now()): Swipe
   const rawConcepts = new Map<string, { pos: number; neg: number; subjects: Map<string, number> }>();
   const rawAuthors = new Map<string, { name: string; pos: number; neg: number }>();
   const genreConcepts = new Map<string, Map<string, number>>();
+  const eras: SwipeModel['eras'] = { neu: { pos: 0, neg: 0 }, alt: { pos: 0, neg: 0 } };
   let posSum = 0;
   let negSum = 0;
   let likes = 0;
@@ -142,6 +149,10 @@ export function buildSwipeModel(signals: TasteSignal[], now = Date.now()): Swipe
     negSum += neg;
     if (pos) likes++;
     else dislikes++;
+    if (s.year) {
+      eras[eraOf(s.year)].pos += pos;
+      eras[eraOf(s.year)].neg += neg;
+    }
     const f = signalFeatures(s);
     for (const g of f.genres) {
       const stat = genres.get(g);
@@ -183,7 +194,7 @@ export function buildSwipeModel(signals: TasteSignal[], now = Date.now()): Swipe
   const authors = new Map<string, AuthorStat>();
   for (const [k, r] of rawAuthors) authors.set(k, { ...r, score: logOdds(r.pos, r.neg, baseRate) });
 
-  return { total: likes + dislikes, likes, dislikes, baseRate, genres, concepts, authors, genreConcepts };
+  return { total: likes + dislikes, likes, dislikes, baseRate, genres, concepts, authors, genreConcepts, eras };
 }
 
 /* ---------- Genre-Statistik ---------- */
@@ -213,6 +224,32 @@ export function genreAffinity(model: SwipeModel, genreId: string): number {
 export function genreEvidence(model: SwipeModel, genreId: string): number {
   const s = model.genres.get(genreId);
   return s ? s.pos + s.neg : 0;
+}
+
+/* ---------- Neu und Alt ---------- */
+
+// Genres, in denen ältere Bücher ausdrücklich willkommen sind (Weltliteratur) bzw. selten gefragt (Unterhaltung)
+const TIMELESS = ['literatur', 'magischer-realismus', 'mythen', 'philosophie', 'geschichte', 'biografie'];
+const AGING = ['krimi', 'thriller', 'fantasy', 'scifi', 'dystopie', 'horror', 'liebe', 'humor', 'abenteuer', 'jugend', 'spionage', 'familie'];
+
+/**
+ * Anteil neuerer Bücher (ab 1990) an den Karten eines Genres. Die meistgelesenen Bücher aller
+ * Zeiten sind fast nur Klassiker – ohne diesen Ausgleich bestünde der Stapel grösstenteils aus
+ * Weltliteratur. Ausgangswert zwei Drittel, angepasst an das, was du bei Neuem und Altem magst.
+ */
+export function modernShare(model: SwipeModel, genreId: string): number {
+  if (genreId === 'klassiker') return 0;
+  const affinity = (e: Era) => {
+    const s = model.eras[e];
+    const p = model.baseRate;
+    return (s.pos + PRIOR_STRENGTH * p) / (s.pos + s.neg + PRIOR_STRENGTH);
+  };
+  const base = 0.65 * affinity('neu');
+  let share = base / (base + 0.35 * affinity('alt'));
+  share = Math.min(0.85, Math.max(0.35, share));
+  if (TIMELESS.includes(genreId)) share -= 0.2;
+  else if (AGING.includes(genreId)) share += 0.1;
+  return Math.min(0.9, Math.max(0.15, share));
 }
 
 /* ---------- Zufall (austauschbar für Tests) ---------- */
@@ -377,6 +414,8 @@ export function interleave<T>(lists: T[][]): T[] {
 /* ---------- Für die Anzeige ---------- */
 
 export interface ModelSummary {
+  /** Anteil neuerer Bücher (ab 1990), den der Stapel derzeit anstrebt (ohne Genre-Anpassung). */
+  modern: number;
   genres: Array<{ id: string; label: string; affinity: number; evidence: number }>;
   toExplore: string[];
   liked: ConceptStat[];
@@ -388,6 +427,7 @@ export function summarizeModel(model: SwipeModel): ModelSummary {
   const concepts = Array.from(model.concepts.values()).filter((c) => c.pos + c.neg >= 2);
   const uniqueLabels = (list: ConceptStat[]) => list.filter((c, i, arr) => arr.findIndex((x) => x.label === c.label) === i);
   return {
+    modern: modernShare(model, ''),
     genres: genres.filter((g) => g.evidence >= 1.5).sort((a, b) => b.affinity - a.affinity),
     toExplore: genres.filter((g) => g.evidence < 1.5).map((g) => g.label),
     liked: uniqueLabels(concepts.filter((c) => c.score > 0.3).sort((a, b) => b.score * Math.sqrt(b.pos) - a.score * Math.sqrt(a.pos))).slice(0, 8),

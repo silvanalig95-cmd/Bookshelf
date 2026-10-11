@@ -17,7 +17,8 @@ import { displaySubjects, languageLabel, subjectLabel } from '../lib/taxonomy';
 import { solrPhrase, uniq } from '../lib/text';
 import type { Book, Edition } from '../lib/types';
 import { useSettings } from '../store/settings';
-import { deeplUrl, germanWikipediaSummary, guessLanguage } from '../lib/wikipedia';
+import { readBlurb, writeBlurb } from '../lib/blurbCache';
+import { contentSummary, deeplUrl, germanWikipediaSummary, guessLanguage } from '../lib/wikipedia';
 import type { AiConfig } from '../lib/aiPrompts';
 import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
 import { useSignals } from '../store/signals';
@@ -216,7 +217,9 @@ export default function BookDetail() {
   const descriptionLang = anyDescription ? guessLanguage(anyDescription) : undefined;
   const germanBlurb = gbGerman ?? (descriptionLang === 'ger' ? anyDescription : undefined);
   const description = germanBlurb ?? anyDescription;
-  const germanText = Boolean(wiki.data || germanBlurb);
+  // Zählt nur, was vom Inhalt erzählt – eine Einleitung über Verlag und Erfolg reicht nicht
+  const wikiContent = wiki.data ? contentSummary(wiki.data) : undefined;
+  const germanText = Boolean(wikiContent || germanBlurb);
   const foreignDescription = germanBlurb ? undefined : anyDescription;
   const libraryEntry = readIndex.entryFor(book);
   const subjects = displaySubjects(book.subjects, 8);
@@ -332,16 +335,24 @@ export default function BookDetail() {
             )}
           </div>
 
-          {/* Worum geht's – deutsch zuerst, Fremdsprachiges nur auf Wunsch */}
+          {/* Worum geht's – Inhalt vor Verlagsgeschichte, Deutsches vor Fremdsprachigem */}
           {!germanText && <AiBlurb book={book} description={description} config={aiConfig} prominent />}
+          {!germanText && foreignDescription && <ForeignBlurb text={foreignDescription} lang={descriptionLang} open={!aiConfig} />}
           {wiki.data && (
             <div className="about-block">
-              <div className="description">{wiki.data.extract}</div>
-              {wiki.data.plot && (
-                <details className="disclosure">
-                  <summary>{wiki.data.plot.heading} (mit Spoilern)</summary>
-                  <div className="description">{wiki.data.plot.text}</div>
-                </details>
+              {wiki.data.plot && wikiContent ? (
+                <>
+                  <div className="label">Worum es geht</div>
+                  <div className="description">{wikiContent.text}</div>
+                  <details className="disclosure">
+                    <summary>Ganze {wiki.data.plot.heading} lesen (mit Spoilern)</summary>
+                    <div className="description">{wiki.data.plot.text}</div>
+                  </details>
+                  <div className="label mt-1">Über das Buch</div>
+                  <div className="description secondary">{wiki.data.extract}</div>
+                </>
+              ) : (
+                <div className="description">{wiki.data.extract}</div>
               )}
               <div className="tiny muted">
                 Aus der deutschsprachigen Wikipedia ·{' '}
@@ -358,16 +369,8 @@ export default function BookDetail() {
             </div>
           )}
           {germanText && <AiBlurb book={book} description={description} config={aiConfig} />}
-          {foreignDescription && (
-            <details className="disclosure" open={!germanText && !aiConfig}>
-              <summary>{descriptionLang ? `Klappentext auf ${languageLabel(descriptionLang)}` : 'Klappentext (fremdsprachig)'}</summary>
-              <div className="description">{foreignDescription}</div>
-              <a className="small" href={deeplUrl(foreignDescription, descriptionLang)} target="_blank" rel="noopener noreferrer">
-                Mit DeepL übersetzen ↗
-              </a>
-            </details>
-          )}
-          {!germanText && !foreignDescription && !wiki.loading && <p className="muted">Für dieses Buch ist noch keine Beschreibung hinterlegt.</p>}
+          {germanText && foreignDescription && <ForeignBlurb text={foreignDescription} lang={descriptionLang} />}
+          {!germanText && !foreignDescription && !wiki.data && !wiki.loading && <p className="muted">Für dieses Buch ist noch keine Beschreibung hinterlegt.</p>}
           {book.firstSentence && germanish(book.firstSentence) && (
             <figure className="first-sentence-box">
               <figcaption className="label">So beginnt das Buch</figcaption>
@@ -453,20 +456,24 @@ export default function BookDetail() {
   );
 }
 
+function ForeignBlurb({ text, lang, open = false }: { text: string; lang?: string; open?: boolean }) {
+  return (
+    <details className="disclosure" open={open}>
+      <summary>{lang ? `Klappentext auf ${languageLabel(lang)}` : 'Klappentext (fremdsprachig)'}</summary>
+      <div className="description">{text}</div>
+      <a className="small" href={deeplUrl(text, lang)} target="_blank" rel="noopener noreferrer">
+        Mit DeepL übersetzen ↗
+      </a>
+    </details>
+  );
+}
+
 /** Kurze, spoilerfreie deutsche Beschreibung von der KI – auf Wunsch erzeugt und auf dem Gerät gemerkt. */
 function AiBlurb({ book, description, config, prominent }: { book: Book; description?: string; config?: AiConfig; prominent?: boolean }) {
   const entries = useLibraryEntries();
   const profile = useProfile();
-  const key = `lesekompass.blurb.v1.${book.id}`;
   const [state, setState] = useState<{ text?: string; model?: string; busy?: boolean; error?: string }>({});
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(key);
-      setState(raw ? (JSON.parse(raw) as { text: string; model: string }) : {});
-    } catch {
-      setState({});
-    }
-  }, [key]);
+  useEffect(() => setState(readBlurb(book.id) ?? {}), [book.id]);
 
   if (!state.text && !state.busy && !config) return null;
 
@@ -487,11 +494,7 @@ function AiBlurb({ book, description, config, prominent }: { book: Book; descrip
       );
       const done = { text: reply.text.trim(), model: AI_MODEL_NAMES[reply.model] ?? reply.model };
       setState(done);
-      try {
-        localStorage.setItem(key, JSON.stringify(done));
-      } catch {
-        /* Speicher voll – dann eben nur für jetzt */
-      }
+      writeBlurb(book.id, done);
     } catch (err) {
       setState({ error: aiErrorMessage(err) });
     }

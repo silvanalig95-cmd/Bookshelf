@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildProfile, signalScale } from '../src/lib/profile';
-import { buildSwipeModel, contentFit, focusFor, genreAffinity, interleave, planDeck, sampleBeta, summarizeModel, SWIPE_GENRES } from '../src/lib/swipeModel';
+import { drawDeck } from '../src/lib/swipeDeck';
+import { buildSwipeModel, contentFit, focusFor, genreAffinity, interleave, MODERN_FROM, modernShare, planDeck, sampleBeta, summarizeModel, SWIPE_GENRES } from '../src/lib/swipeModel';
 import type { Book, SignalVerdict, TasteSignal } from '../src/lib/types';
 
 /** Reproduzierbarer Zufall (mulberry32). */
@@ -178,5 +179,60 @@ describe('Hilfsfunktionen', () => {
     expect(4000 * signalScale(4000)).toBeCloseTo(2 * 1000 * signalScale(1000), 5);
     const swipes = Array.from({ length: 2000 }, () => signal(['Romance', 'Love stories'], 'like'));
     expect(buildProfile([], swipes).signalCount).toBe(2000);
+  });
+});
+
+describe('Neu und Alt', () => {
+  it('mischt standardmässig rund zwei Drittel neuere Bücher, bei Weltliteratur mehr Älteres', () => {
+    const empty = buildSwipeModel([], NOW);
+    expect(modernShare(empty, 'krimi')).toBeCloseTo(0.75, 2);
+    expect(modernShare(empty, 'literatur')).toBeCloseTo(0.45, 2);
+    expect(modernShare(empty, 'klassiker')).toBe(0);
+  });
+
+  it('lernt aus den Swipes, ob du eher Neues oder Älteres magst – mit Grenzen', () => {
+    const lovesOld: TasteSignal[] = [];
+    for (let i = 0; i < 40; i++) {
+      lovesOld.push({ ...signal(FANTASY, 'like'), year: 1900 + i });
+      lovesOld.push({ ...signal(FANTASY, 'dislike'), year: 2000 + (i % 20) });
+    }
+    const model = buildSwipeModel(lovesOld, NOW);
+    const share = modernShare(model, 'fantasy');
+    expect(share).toBeLessThan(modernShare(buildSwipeModel([], NOW), 'fantasy'));
+    expect(share).toBeGreaterThanOrEqual(0.15);
+  });
+});
+
+describe('Stapel ziehen', () => {
+  const mk = (id: string, year: number, author: string): Book =>
+    ({ id, title: id, authors: [author], subjects: ['Fiction'], languages: ['ger'], year, coverId: 1, popularity: 100 }) as Book;
+  let next = 0;
+  // Liefert je Anfrage frische Bücher; neuere nur bei Anfragen mit Jahresfilter
+  const search = async (q: string) => {
+    const modern = q.includes('first_publish_year');
+    return Array.from({ length: 20 }, (_, i) => {
+      next++;
+      return mk(`B${next}`, modern ? 1995 + (i % 25) : 1850 + i * 5, `Autor ${next}`);
+    });
+  };
+
+  it('hält den Anteil neuerer Bücher ein und nimmt jede Autor:in nur einmal', async () => {
+    const seen = new Set<string>();
+    const cards = await drawDeck(buildSwipeModel([], NOW), { langClause: '', usable: (b) => !seen.has(b.id), markSeen: (b) => seen.add(b.id), search, rng: rng(5) });
+    expect(cards.length).toBe(16);
+    const modern = cards.filter((c) => (c.book.year ?? 0) >= MODERN_FROM).length / cards.length;
+    expect(modern).toBeGreaterThan(0.45);
+    expect(modern).toBeLessThan(0.9);
+    expect(new Set(cards.map((c) => c.book.authors[0])).size).toBe(cards.length);
+    expect(cards.every((c) => c.why.length > 0)).toBe(true);
+  });
+
+  it('zeigt Gesehenes nicht nochmals', async () => {
+    const seen = new Set<string>();
+    const opts = { langClause: '', usable: (b: Book) => !seen.has(b.id), markSeen: (b: Book) => seen.add(b.id), search, rng: rng(9) };
+    const a = await drawDeck(buildSwipeModel([], NOW), opts);
+    const b = await drawDeck(buildSwipeModel([], NOW), opts);
+    const ids = new Set(a.map((c) => c.book.id));
+    expect(b.some((c) => ids.has(c.book.id))).toBe(false);
   });
 });

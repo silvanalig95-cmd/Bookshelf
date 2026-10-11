@@ -115,6 +115,8 @@ export interface TasteSignal {
   subjects: string[];
   verdict: SignalVerdict;
   at: string;
+  /** Erscheinungsjahr – damit das Swipe-Modell lernt, ob du eher Neues oder Älteres magst. */
+  year?: number;
 }
 
 export type Region = 'DE' | 'CH' | 'AT';

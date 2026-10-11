@@ -28,6 +28,7 @@ export const useSignals = create<SignalsState>()(
           subjects: book.subjects.slice(0, 25),
           verdict,
           at: new Date().toISOString(),
+          ...(book.year ? { year: book.year } : {}),
         };
         const rest = get().signals.filter((s) => s.bookId !== book.id);
         set({ signals: [...rest, signal].slice(-MAX_SIGNALS) });

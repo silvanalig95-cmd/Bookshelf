@@ -1126,6 +1126,10 @@ textarea {
   padding-left: 14px;
   border-left: 2px solid var(--line-strong);
 }
+.description.secondary {
+  font-size: 0.95rem;
+  color: var(--ink-2);
+}
 details.disclosure {
   margin-bottom: 14px;
 }
@@ -1905,6 +1909,15 @@ kbd {
 }
 .swipe-info h2 {
   font-size: 1.7rem;
+}
+.swipe-src {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 2px;
 }
 .swipe-text {
   margin-top: 14px;

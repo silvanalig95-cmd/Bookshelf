@@ -4,16 +4,18 @@ import { bookPath } from '../components/BookCard';
 import { Cover } from '../components/Cover';
 import { Icon } from '../components/Icon';
 import { Stars } from '../components/Stars';
-import { ageWeight, famePrior, hasGerman } from '../lib/discovery';
+import { hasGerman } from '../lib/discovery';
 import { useAsync, useProfile, useReadIndex } from '../lib/hooks';
 import { settle } from '../lib/http';
-import { docToBook, getWork, isbnCoverUrl, searchWorks } from '../lib/openLibrary';
+import { getWork, isbnCoverUrl } from '../lib/openLibrary';
 import { isProfileUsable } from '../lib/profile';
-import { bookFeatures, buildSwipeModel, contentFit, interleave, planDeck, summarizeModel, SWIPE_GENRES, type DeckSlot } from '../lib/swipeModel';
-import { displaySubjects } from '../lib/taxonomy';
-import { shuffle, solrPhrase, truncate } from '../lib/text';
+import { drawDeck, type DeckCard } from '../lib/swipeDeck';
+import { buildSwipeModel, MODERN_FROM, summarizeModel } from '../lib/swipeModel';
+import { displaySubjects, languageLabel } from '../lib/taxonomy';
+import { shuffle, truncate } from '../lib/text';
 import type { Book, SignalVerdict } from '../lib/types';
-import { germanWikipediaSummary } from '../lib/wikipedia';
+import { readBlurb } from '../lib/blurbCache';
+import { contentSummary, germanWikipediaSummary, guessLanguage, type WikiSummary } from '../lib/wikipedia';
 import { useSettings } from '../store/settings';
 import { useSignals } from '../store/signals';
 import { rememberBook, toast, useUi } from '../store/ui';
@@ -22,18 +24,11 @@ import { useWishlist } from '../store/wishlist';
 const THRESHOLD = 110;
 const DECK_SIZE = 16;
 
-interface DeckCard {
-  book: Book;
-  /** Warum die Karte im Stapel liegt – macht das Lernen nachvollziehbar. */
-  why: string;
-}
-
 interface SessionState {
   liked: Book[];
   count: number;
 }
 
-const subjectClause = (subjects: string[]) => `subject:(${subjects.map(solrPhrase).join(' OR ')})`;
 
 export default function Swipe() {
   const language = useSettings((s) => s.language);
@@ -67,49 +62,14 @@ export default function Swipe() {
     fetching.current = true;
     setLoading(true);
     try {
-      const m = modelRef.current;
-      const slots = planDeck(m, { size: DECK_SIZE });
-      const page = () => Math.floor(Math.random() * 3) * 20;
-      const fetchSlot = async (slot: DeckSlot): Promise<Book[]> => {
-        const genre = subjectClause(slot.genre.subjects.slice(0, 3));
-        const queries = [`${genre}${langClause}`];
-        if (slot.focus.length) queries.unshift(`${genre} AND ${subjectClause(slot.focus)}${langClause}`);
-        const results = await Promise.all(
-          queries.map((q, i) => settle(searchWorks(q, { sort: 'readinglog', limit: 20, offset: slot.kind === 'neuland' || (slot.focus.length && i === 0) ? 0 : page(), lang: 'de' }))),
-        );
-        return results.flatMap((r) => (r?.docs ?? []).map((d) => docToBook(d)));
-      };
-      const librarySubjects = isProfileUsable(profile) ? shuffle(profile.querySubjects.slice(0, 8)).slice(0, 3) : [];
-      const [slotBooks, libraryBooks] = await Promise.all([
-        Promise.all(slots.map(fetchSlot)),
-        librarySubjects.length
-          ? settle(searchWorks(`${subjectClause(librarySubjects)}${langClause}`, { sort: 'rating', limit: 20, offset: page(), lang: 'de' })).then((r) => (r?.docs ?? []).map((d) => docToBook(d)))
-          : Promise.resolve([] as Book[]),
-      ]);
-
-      const usable = (b: Book) => !seen.current.has(b.id) && !readIndex.has(b) && Boolean(b.coverId || b.coverUrl);
-      // Beschriftung nach dem Genre des Buchs selbst – die Suche nach einem Genre liefert auch Verwandtes
-      const genreLabel = (b: Book, fallback: string) => {
-        const own = bookFeatures(b).genres;
-        if (own.includes(fallback)) return SWIPE_GENRES.find((g) => g.id === fallback)!.label;
-        return SWIPE_GENRES.find((g) => own.includes(g.id))?.label ?? SWIPE_GENRES.find((g) => g.id === fallback)?.label ?? '';
-      };
-      const pick = (books: Book[], count: number, fitWeight: number, why: (b: Book) => string): DeckCard[] => {
-        const ranked = books
-          .filter(usable)
-          .filter((b, i, arr) => arr.findIndex((x) => x.id === b.id) === i)
-          // Passung zu deinen Swipes + bekannte Bücher bevorzugt + etwas Zufall, damit der Stapel lebendig bleibt
-          .map((b) => ({ b, s: contentFit(b, m) * fitWeight + famePrior(b) * 0.6 + ageWeight(b).adj * 0.8 + Math.random() * 0.6 }))
-          .sort((a, b) => b.s - a.s)
-          .slice(0, count);
-        for (const { b } of ranked) seen.current.add(b.id);
-        return ranked.map(({ b }) => ({ book: b, why: why(b) }));
-      };
-      const lists = slots.map((slot, i) =>
-        pick(slotBooks[i], slot.count, slot.kind === 'neuland' ? 0.4 : 1, (b) => (slot.kind === 'neuland' ? 'Neuland: ' : '') + genreLabel(b, slot.genre.id)),
-      );
-      if (libraryBooks.length) lists.push(pick(libraryBooks, 2, 1, () => 'passt zu deinem Profil'));
-      setDeck((d) => [...d, ...interleave(shuffle(lists))]);
+      const cards = await drawDeck(modelRef.current, {
+        size: DECK_SIZE,
+        langClause,
+        librarySubjects: isProfileUsable(profile) ? shuffle(profile.querySubjects.slice(0, 8)).slice(0, 3) : [],
+        usable: (b) => !seen.current.has(b.id) && !readIndex.has(b) && Boolean(b.coverId || b.coverUrl),
+        markSeen: (b) => seen.current.add(b.id),
+      });
+      setDeck((d) => [...d, ...cards]);
     } finally {
       fetching.current = false;
       setLoading(false);
@@ -296,6 +256,11 @@ export default function Swipe() {
                 {summary.toExplore.length > 6 ? ' …' : ''}
               </p>
             )}
+            <p className="small mt-1 mb-0">
+              <span className="muted">Neu und älter: </span>
+              etwa {Math.round(summary.modern * 100)} % seit {MODERN_FROM} erschienen
+              {model.eras.neu.pos + model.eras.neu.neg + model.eras.alt.pos + model.eras.alt.neg >= 6 ? ' (nach deinen Swipes angepasst)' : ''}, bei Weltliteratur mehr Älteres
+            </p>
             <p className="tiny muted mt-2 mb-0">
               {model.total.toLocaleString('de-CH')} Entscheidungen gespeichert · {session.count} in dieser Runde. Jeder Stapel: etwa drei Viertel nach deinem
               Geschmack, ein Viertel Neuland, kein Genre über 30 %.
@@ -358,12 +323,14 @@ export default function Swipe() {
 
 function SwipeCardContent({ book, preview = false, why }: { book: Book; preview?: boolean; why?: string }) {
   const work = useAsync(async (signal) => (preview ? undefined : settle(getWork(book.id, signal))), [book.id, preview]);
+  const wikidataId = work.data?.wikidataId;
   const wiki = useAsync(
-    async (signal) => (preview ? undefined : germanWikipediaSummary({ titles: [book.title], author: book.authors[0] }, signal).catch(() => undefined)),
-    [book.id, preview],
+    async (signal) =>
+      preview || work.loading ? undefined : germanWikipediaSummary({ wikidataId, titles: [book.title], author: book.authors[0] }, signal).catch(() => undefined),
+    [book.id, preview, work.loading, wikidataId],
   );
   const subjects = displaySubjects(book.subjects, 6);
-  const text = wiki.data?.extract ?? work.data?.description ?? book.firstSentence;
+  const about = describe(book, wiki.data, work.data?.description);
   const isbn = book.isbns?.[0];
   return (
     <div className="swipe-content">
@@ -388,7 +355,12 @@ function SwipeCardContent({ book, preview = false, why }: { book: Book; preview?
                 </span>
               ))}
             </div>
-            {text && <p className="swipe-text">{truncate(text, 420)}</p>}
+            {about && (
+              <p className="swipe-text">
+                <span className="swipe-src">{about.label}</span>
+                {truncate(about.text, 420)}
+              </p>
+            )}
             <Link to={bookPath(book)} onClick={() => rememberBook(book)} className="btn btn-sm btn-ghost">
               Details & Angebote →
             </Link>
@@ -399,3 +371,21 @@ function SwipeCardContent({ book, preview = false, why }: { book: Book; preview?
   );
 }
 
+/**
+ * Was auf der Karte steht – der Inhalt zuerst: KI-Kurzfassung (falls schon erzeugt), Ausgangslage
+ * aus dem Wikipedia-Abschnitt „Handlung“, inhaltliche Sätze der Einleitung, Klappentext. Angaben
+ * zu Verlag und Erfolg nur, wenn es sonst nichts gibt.
+ */
+function describe(book: Book, wiki: WikiSummary | undefined, blurb: string | undefined): { label: string; text: string } | undefined {
+  const ai = readBlurb(book.id);
+  if (ai) return { label: 'Worum es geht', text: ai.text };
+  const content = wiki ? contentSummary(wiki, 420) : undefined;
+  if (content) return { label: 'Worum es geht', text: content.text };
+  if (blurb) {
+    const lang = guessLanguage(blurb);
+    return { label: lang && lang !== 'ger' ? `Klappentext (${languageLabel(lang)})` : 'Klappentext', text: blurb };
+  }
+  if (wiki) return { label: 'Über das Buch', text: wiki.extract };
+  if (book.firstSentence) return { label: 'So beginnt es', text: `„${book.firstSentence}“` };
+  return undefined;
+}

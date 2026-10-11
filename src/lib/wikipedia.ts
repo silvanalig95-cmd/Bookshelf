@@ -38,6 +38,60 @@ export function extractPlot(article: string): WikiSummary['plot'] {
   return undefined;
 }
 
+// Abkürzungen, nach denen ein Punkt keinen Satz beendet („z. B.“, „Dr.“, „St.“ …)
+const ABBREVIATIONS = new Set(['z', 'b', 'd', 'h', 'u', 'a', 'o', 'dr', 'st', 'nr', 'bzw', 'ca', 'vgl', 'etc', 'usw', 'sog', 'geb', 'jh', 'jhd', 'mio', 'mrd', 'prof', 'hl', 'chr', 'evtl', 'ggf', 'inkl', 'mr', 'mrs', 'ms', 'jr', 'sr', 'vs', 'bd', 'ff', 'v']);
+
+/** Zerlegt Fliesstext in Sätze – robust gegen Abkürzungen, Initialen und Ordnungszahlen („19. Jahrhundert“). */
+export function sentences(text: string): string[] {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  const out: string[] = [];
+  const re = /[.!?…]+["“”»«']?\s+/g;
+  let start = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(flat))) {
+    const word = (flat.slice(start, m.index).match(/(\S+)$/)?.[1] ?? '').replace(/^[(„"»]/, '').toLowerCase();
+    const next = flat[m.index + m[0].length] ?? '';
+    const abbreviation = flat[m.index] === '.' && (ABBREVIATIONS.has(word) || /^\d+$/.test(word) || /^\p{L}$/u.test(word));
+    if (abbreviation || !/[\p{Lu}„"»(\d]/u.test(next)) continue;
+    out.push(flat.slice(start, m.index + m[0].length).trim());
+    start = m.index + m[0].length;
+  }
+  const rest = flat.slice(start).trim();
+  if (rest) out.push(rest);
+  return out;
+}
+
+/** Fügt ganze Sätze aneinander, bis etwa `max` Zeichen erreicht sind (mindestens einen). */
+function upTo(list: string[], max: number): string {
+  let text = '';
+  for (const sentence of list) {
+    if (text && text.length + sentence.length + 1 > max) break;
+    text = text ? `${text} ${sentence}` : sentence;
+  }
+  return text.length > max * 1.6 ? `${text.slice(0, text.lastIndexOf(' ', max))} …` : text;
+}
+
+/** Die ersten Sätze der Handlung: die Ausgangslage, meist ohne das Ende zu verraten. */
+export function premise(plot: string, max = 480): string {
+  return upTo(sentences(plot), max);
+}
+
+// Sätze, die vom Inhalt erzählen – im Unterschied zu Angaben über Erscheinen, Verlag, Erfolg
+const CONTENT = /\b(handelt|handeln|erzählt|erzählen|geht es|schildert|schildern|beschreibt|im mittelpunkt|protagonist\w*|hauptfigur\w*|ich-erzähler\w*|spielt (in|im|auf|an|während)|folgt|begleitet|dreht sich|geschichte (eines|einer|von|des|der))\b/i;
+const META = /\b(erschien|erschienen|veröffentlicht\w*|verlag|übersetz\w*|bestseller\w*|verfilm\w*|auflage|ausgezeichnet|preis|debüt\w*|sprachen|exemplare|rezension\w*|bestsellerliste)\b/i;
+
+/** Inhaltliche Sätze aus einer Einleitung (ohne Erscheinungs- und Erfolgsangaben). */
+export function contentSentences(text: string): string[] {
+  return sentences(text).filter((x) => CONTENT.test(x) && !(META.test(x) && !/\b(handelt|erzählt|geht es|schildert)\b/i.test(x)));
+}
+
+/** Worum es im Buch geht – aus dem Handlungsabschnitt oder den inhaltlichen Sätzen der Einleitung. */
+export function contentSummary(w: WikiSummary, max = 480): { text: string; source: 'plot' | 'intro' } | undefined {
+  if (w.plot) return { text: premise(w.plot.text, max), source: 'plot' };
+  const content = contentSentences(w.extract);
+  return content.length ? { text: upTo(content, max), source: 'intro' } : undefined;
+}
+
 async function withPlot(w: WikiSummary, signal?: AbortSignal): Promise<WikiSummary> {
   try {
     const d = await fetchJson<{ query?: { pages?: Record<string, { extract?: string }> } }>(
