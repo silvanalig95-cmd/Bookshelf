@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => {
       localApi({
         anthropicApiKey: env.ANTHROPIC_API_KEY || undefined,
         geminiApiKey: env.GEMINI_API_KEY || undefined,
+        llmKeys: { mistral: env.MISTRAL_API_KEY || undefined, groq: env.GROQ_API_KEY || undefined, openrouter: env.OPENROUTER_API_KEY || undefined },
         allowRemote: env.LESEKOMPASS_ALLOW_REMOTE === '1',
         sync: env.LESEKOMPASS_DATA ? new SyncStore(env.LESEKOMPASS_DATA) : undefined,
       }),

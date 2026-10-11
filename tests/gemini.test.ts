@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AiRecommendationSchema, type AiConfig, type ChatTurn } from '../src/lib/aiPrompts';
 import { aiAvailability, aiConfigFor, resetAiStatus } from '../src/lib/aiStatus';
-import { geminiChat, geminiRecommend, geminiSchema } from '../src/lib/gemini';
+import { geminiChat, geminiRecommend, geminiSchema, geminiText, modelChain, thinkingFor } from '../src/lib/gemini';
 
 const browser: AiConfig = { provider: 'gemini', via: 'browser', key: 'test-key', model: 'gemini-3.8-flash' };
 const answer = {
@@ -62,18 +62,38 @@ describe('Gemini: Empfehlungen', () => {
     expect(r.recommendations).toHaveLength(1);
   });
 
-  it('nimmt Flash-Lite, wenn das Gratis-Kontingent von Flash aufgebraucht ist', async () => {
-    const calls = stubFetch([json({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded' } }, 429), json(candidate([{ text: JSON.stringify(answer) }]))]);
+  it('nimmt das nächste Gemini-Modell (eigenes Kontingent), wenn das von Flash aufgebraucht ist', async () => {
+    const quota = json({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded' } }, 429);
+    const calls = stubFetch([quota, quota, json(candidate([{ text: JSON.stringify(answer) }]))]);
     const r = await geminiRecommend('x', browser, '');
-    expect(calls[1].url).toContain('/models/gemini-3.5-flash-lite:generateContent');
+    expect(calls.map((c) => c.url.match(/models\/([^:]+)/)![1])).toEqual(['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite']);
     expect(r.note).toContain('Gemini 3.5 Flash-Lite');
+    expect(r.note).toContain('Gemini 3.8 Flash');
+  });
+
+  it('kleine Aufgaben beginnen bei Flash-Lite und denken kaum nach', async () => {
+    const sse = (text: string) => () =>
+      new Response(`data: ${JSON.stringify(candidate([{ text }]))}\n\n`, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    const calls = stubFetch([sse('Kurz und gut.')]);
+    const reply = await geminiText(browser, ['System'], 'Prompt', () => {}, { light: true });
+    expect(calls[0].url).toContain('/models/gemini-3.5-flash-lite:streamGenerateContent');
+    expect(calls[0].body.generationConfig).toEqual({ maxOutputTokens: 2048, thinkingConfig: { thinkingLevel: 'MINIMAL' } });
+    expect(reply.text).toBe('Kurz und gut.');
+  });
+
+  it('wählt je Modell eine Denkstufe, die es kann', () => {
+    expect(thinkingFor('gemini-3.8-flash', 'MINIMAL')).toEqual({ thinkingConfig: { thinkingLevel: 'LOW' } });
+    expect(thinkingFor('gemini-3.6-flash', 'MINIMAL')).toEqual({ thinkingConfig: { thinkingLevel: 'MINIMAL' } });
+    expect(thinkingFor('gemini-3.1-flash-lite', 'MEDIUM')).toEqual({});
+    expect(modelChain('gemini-3.6-flash')).toEqual(['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']);
   });
 
   it('erklärt Fehler verständlich', async () => {
     stubFetch([json({ error: { code: 400, status: 'INVALID_ARGUMENT', message: 'API key not valid. Please pass a valid API key.' } }, 400)]);
     await expect(geminiRecommend('x', browser, '')).rejects.toThrow('Gemini-API-Schlüssel ist ungültig');
 
-    stubFetch([json({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }, 429), json({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }, 429)]);
+    const quota = json({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }, 429);
+    stubFetch([quota, quota, quota, quota]);
     await expect(geminiRecommend('x', browser, '')).rejects.toThrow('Gratis-Kontingent');
 
     stubFetch([json({ promptFeedback: { blockReason: 'SAFETY' } })]);
@@ -160,19 +180,19 @@ describe('Welche KI antwortet?', () => {
 
   it('bevorzugt den gewählten Anbieter, Server vor Browser', async () => {
     status(true, true);
-    expect(await aiAvailability(settings)).toEqual({ available: true, provider: 'gemini', via: 'server' });
+    expect(await aiAvailability(settings)).toMatchObject({ available: true, provider: 'gemini', via: 'server' });
     resetAiStatus();
     status(false, false);
-    expect(await aiAvailability({ ...settings, geminiApiKey: 'k' })).toEqual({ available: true, provider: 'gemini', via: 'browser' });
+    expect(await aiAvailability({ ...settings, geminiApiKey: 'k' })).toMatchObject({ available: true, provider: 'gemini', via: 'browser' });
   });
 
   it('weicht auf den anderen Anbieter aus, wenn nur dafür ein Schlüssel da ist', async () => {
     status(true, false);
     const access = await aiAvailability(settings);
-    expect(access).toEqual({ available: true, provider: 'claude', via: 'server' });
-    expect(aiConfigFor(access, settings)).toEqual({ provider: 'claude', via: 'server', key: '', model: 'claude-opus-5-5' });
+    expect(access).toMatchObject({ available: true, provider: 'claude', via: 'server' });
+    expect(aiConfigFor(access, settings)).toMatchObject({ provider: 'claude', via: 'server', key: '', model: 'claude-opus-5-5', fallbacks: [] });
     resetAiStatus();
     status(false, false);
-    expect(await aiAvailability(settings)).toEqual({ available: false });
+    expect(await aiAvailability(settings)).toMatchObject({ available: false });
   });
 });

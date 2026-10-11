@@ -11,6 +11,8 @@
  *   LESEKOMPASS_AUTH   Login, z. B. "ich:langes-passwort" – mehrere mit ";" getrennt
  *   ANTHROPIC_API_KEY  optionaler Claude-Schlüssel (nur für angemeldete Personen nutzbar)
  *   GEMINI_API_KEY     optionaler Gemini-Schlüssel von Google AI Studio (ebenso)
+ *   MISTRAL_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY
+ *                      optionale Gratis-Ausweich-Kanäle, wenn das Gemini-Kontingent aufgebraucht ist
  *   LESEKOMPASS_DIST   Ordner mit der gebauten App (Standard ../dist)
  *   LESEKOMPASS_DATA   Ordner für die synchronisierten Daten (Standard $LESEKOMPASS_HOME/data;
  *                      ohne beides gibt es keine Synchronisation)
@@ -24,6 +26,7 @@ import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { createLocalApiHandler, isLocalRequest } from './localApi.ts';
+import { BlurbStore } from './blurbStore.ts';
 import { SyncStore } from './syncStore.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -55,6 +58,7 @@ export interface ServerConfig {
   users: Map<string, string>;
   anthropicApiKey?: string;
   geminiApiKey?: string;
+  llmKeys?: { mistral?: string; groq?: string; openrouter?: string };
   /** Ordner für die Geräte-Synchronisation (fehlt = keine Synchronisation). */
   dataDir?: string;
 }
@@ -99,6 +103,11 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ServerConfi
     users: parseUsers(env.LESEKOMPASS_AUTH),
     anthropicApiKey: env.ANTHROPIC_API_KEY?.trim() || undefined,
     geminiApiKey: env.GEMINI_API_KEY?.trim() || undefined,
+    llmKeys: {
+      mistral: env.MISTRAL_API_KEY?.trim() || undefined,
+      groq: env.GROQ_API_KEY?.trim() || undefined,
+      openrouter: env.OPENROUTER_API_KEY?.trim() || undefined,
+    },
     dataDir: env.LESEKOMPASS_DATA ? resolve(env.LESEKOMPASS_DATA) : env.LESEKOMPASS_HOME ? join(resolve(env.LESEKOMPASS_HOME), 'data') : undefined,
   };
 }
@@ -238,11 +247,13 @@ export function createAppServer(cfg: ServerConfig): Server {
   const api = createLocalApiHandler({
     anthropicApiKey: cfg.anthropicApiKey,
     geminiApiKey: cfg.geminiApiKey,
+    llmKeys: cfg.llmKeys,
     allowRemote: true,
     // Den Server-Schlüssel nur mit Login (oder direkt auf diesem Rechner) freigeben
     canUseAi: (req) => cfg.users.size > 0 || isLocalRequest(req),
     sync: cfg.dataDir ? new SyncStore(cfg.dataDir) : undefined,
     userOf: (req) => users.get(req) ?? null,
+    blurbs: cfg.dataDir ? new BlurbStore(cfg.dataDir) : undefined,
   });
   return createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0];
@@ -349,7 +360,13 @@ async function main() {
     if (cfg.users.size) console.log(`Login aktiv für: ${Array.from(cfg.users.keys()).join(', ')}`);
     else if (!isLoopback(cfg.host)) console.log('Hinweis: kein Login gesetzt (LESEKOMPASS_AUTH). Die App ist im Netzwerk offen; die KI-Schlüssel des Servers bleiben gesperrt.');
     console.log(cfg.dataDir ? `Geräte-Synchronisation aktiv – Daten in ${cfg.dataDir}` : 'Geräte-Synchronisation aus (LESEKOMPASS_DATA nicht gesetzt).');
-    for (const [name, key] of [['Claude', cfg.anthropicApiKey], ['Gemini', cfg.geminiApiKey]] as const) {
+    for (const [name, key] of [
+      ['Claude', cfg.anthropicApiKey],
+      ['Gemini', cfg.geminiApiKey],
+      ['Mistral', cfg.llmKeys?.mistral],
+      ['Groq', cfg.llmKeys?.groq],
+      ['OpenRouter', cfg.llmKeys?.openrouter],
+    ] as const) {
       if (key) console.log(cfg.users.size ? `${name}-Schlüssel des Servers aktiv.` : `${name}-Schlüssel gesetzt, aber ohne Login nur auf diesem Rechner selbst nutzbar.`);
     }
   });

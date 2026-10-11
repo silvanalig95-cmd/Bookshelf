@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AI_MODEL_NAMES, aiAvailability, aiConfigFor, resetAiStatus, type AiAccess } from '../lib/aiStatus';
+import type { CompatProvider } from '../lib/aiPrompts';
+import { AI_MODEL_NAMES, aiAvailability, aiConfigFor, COMPAT_ORDER, providerName, resetAiStatus, type AiAccess, type AiChannel } from '../lib/aiStatus';
+import { COMPAT } from '../lib/openaiCompat';
 import { localApiStatus, type LocalApiStatus } from '../lib/goodreads';
 import { annasArchiveUrl, ANNAS_ARCHIVE_MIRRORS } from '../lib/shops';
 import type { LanguagePreference, Region } from '../lib/types';
@@ -31,7 +33,8 @@ const PROVIDERS: Array<{ id: AiProvider; label: string }> = [
 ];
 
 const GEMINI_CHOICES: Array<{ id: GeminiModel; label: string; hint: string }> = [
-  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', hint: 'Beste Empfehlungen (Standard). Ist sein Gratis-Kontingent aufgebraucht, antwortet automatisch Flash-Lite.' },
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', hint: 'Beste Empfehlungen (Standard)' },
+  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash', hint: 'Fast so gut, eigenes Kontingent' },
   { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite', hint: 'Schneller, mit grösserem Gratis-Kontingent' },
 ];
 
@@ -58,19 +61,19 @@ export default function Settings() {
     resetAiStatus();
     aiAvailability(s).then(setAi);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.aiProvider, s.aiApiKey, s.geminiApiKey]);
+  }, [s.aiProvider, s.aiApiKey, s.geminiApiKey, s.fallbackChannels, s.mistralApiKey, s.groqApiKey, s.openrouterApiKey]);
   useEffect(() => {
     for (const id of ['ki', 'abgleich']) if (window.location.hash.includes(`#${id}`)) document.getElementById(id)?.scrollIntoView();
   }, []);
 
-  const providerName = (p?: AiProvider) => (p === 'claude' ? 'Claude' : 'Gemini');
+  const backups = (ai.channels ?? []).slice(1).map((c) => providerName(c.provider));
   const aiStatusText = !ai.available
     ? s.aiProvider === 'gemini'
       ? 'Noch nicht aktiv. Am sichersten liegt der Schlüssel auf dem Server: bei Docker als GEMINI_API_KEY (zusammen mit einem Login) in deploy/lesekompass.env. Oder unten im Browser eintragen.'
       : 'Noch nicht aktiv. Am sichersten liegt der Schlüssel auf dem Server: bei Docker als ANTHROPIC_API_KEY (zusammen mit einem Login) in deploy/lesekompass.env. Oder unten im Browser eintragen.'
-    : `Aktiv: ${AI_MODEL_NAMES[aiConfigFor(ai, s)?.model ?? ''] ?? providerName(ai.provider)} – ${ai.via === 'server' ? 'mit dem Schlüssel des Servers (bleibt dort)' : 'mit dem Schlüssel aus diesem Browser'}.${
-        ai.provider !== s.aiProvider ? ` Für ${providerName(s.aiProvider)} fehlt noch ein Schlüssel, darum antwortet ${providerName(ai.provider)}.` : ''
-      }`;
+    : `Aktiv: ${AI_MODEL_NAMES[aiConfigFor(ai, s)?.model ?? ''] ?? providerName(ai.provider!)} – ${ai.via === 'server' ? 'mit dem Schlüssel des Servers (bleibt dort)' : 'mit dem Schlüssel aus diesem Browser'}.${
+        ai.provider !== s.aiProvider ? ` Für ${providerName(s.aiProvider)} fehlt noch ein Schlüssel, darum antwortet ${providerName(ai.provider!)}.` : ''
+      }${backups.length ? ` Springt ein, wenn das Kontingent aufgebraucht ist: ${backups.join(', ')}.` : ''}`;
 
   const testAi = async () => {
     const config = aiConfigFor(ai, s);
@@ -79,7 +82,7 @@ export default function Settings() {
     try {
       const { aiRecommend } = await import('../lib/ai');
       const r = await aiRecommend('ein kurzer, heiterer Roman für einen Sonntag', config, 'Keine Angaben.', { count: 1 });
-      setTestState(`${providerName(config.provider)} funktioniert! Testvorschlag: „${r.recommendations[0]?.title}“ von ${r.recommendations[0]?.author}${r.note ? ` (${r.note})` : ''}`);
+      setTestState(`Funktioniert! Testvorschlag: „${r.recommendations[0]?.title}“ von ${r.recommendations[0]?.author}${r.note ? ` (${r.note})` : ''}`);
     } catch (err) {
       const { aiErrorMessage } = await import('../lib/ai');
       setTestState(`Fehler: ${aiErrorMessage(err)}`);
@@ -322,6 +325,7 @@ export default function Settings() {
             </div>
           </>
         )}
+        <FallbackChannels server={server} channels={ai.channels ?? []} />
         <div className="btn-row">
           <button className="btn" onClick={testAi} disabled={!ai.available}>
             Verbindung testen
@@ -484,5 +488,85 @@ function SyncCard() {
         </div>
       )}
     </section>
+  );
+}
+
+/** Gratis-Ausweich-Kanäle für den Fall, dass das Kontingent des Hauptanbieters aufgebraucht ist. */
+function FallbackChannels({ server, channels }: { server?: LocalApiStatus; channels: AiChannel[] }) {
+  const s = useSettings();
+  const [results, setResults] = useState<Record<string, string>>({});
+  const keyField = { mistral: 'mistralApiKey', groq: 'groqApiKey', openrouter: 'openrouterApiKey' } as const;
+  const modelField = { mistral: 'mistralModel', groq: 'groqModel', openrouter: 'openrouterModel' } as const;
+
+  const testOne = async (provider: CompatProvider) => {
+    const channel = channels.find((c) => c.provider === provider);
+    if (!channel) return;
+    setResults((r) => ({ ...r, [provider]: 'Teste …' }));
+    const { aiErrorMessage, aiText } = await import('../lib/ai');
+    const config = { provider, via: channel.via, key: s[keyField[provider]], model: s[modelField[provider]], relay: Boolean(server?.goodreads) };
+    try {
+      const reply = await aiText(config, ['Antworte knapp auf Deutsch.'], 'Nenne in einem Satz einen bekannten deutschsprachigen Roman.', () => {}, { light: true });
+      setResults((r) => ({ ...r, [provider]: `Funktioniert (${reply.model}): ${reply.text.slice(0, 120)}` }));
+    } catch (err) {
+      setResults((r) => ({ ...r, [provider]: `Fehler: ${aiErrorMessage(err)}` }));
+    }
+  };
+
+  return (
+    <div className="mt-2">
+      <div className="divider" />
+      <label className="toggle">
+        <input type="checkbox" checked={s.fallbackChannels} onChange={(e) => s.set({ fallbackChannels: e.target.checked })} />
+        <b>Ausweich-Kanäle nutzen, wenn das Kontingent aufgebraucht ist</b>
+      </label>
+      <p className="small muted mt-1">
+        Antwortet der Hauptanbieter nicht, versucht der Lesekompass zuerst die anderen Gemini-Modelle (jedes hat ein eigenes Gratis-Kontingent), dann diese
+        Gratis-Dienste – in dieser Reihenfolge. Kurzbeschreibungen verbrauchen ohnehin wenig: Sie nutzen ein günstiges Modell und nur einen knappen Lesekontext.
+      </p>
+      {s.fallbackChannels &&
+        COMPAT_ORDER.map((provider) => {
+          const info = COMPAT[provider];
+          const onServer = Boolean(server?.llm?.[provider]);
+          return (
+            <div key={provider} className="field">
+              <span className="label">
+                {info.name} <span className="muted small">– {info.note}</span>
+              </span>
+              {onServer ? (
+                <span className="small">Schlüssel liegt auf dem Server ({provider.toUpperCase()}_API_KEY).</span>
+              ) : (
+                <input
+                  className="input"
+                  type="password"
+                  autoComplete="off"
+                  placeholder={`${info.name}-Schlüssel (optional)`}
+                  value={s[keyField[provider]]}
+                  onChange={(e) => s.set({ [keyField[provider]]: e.target.value.trim() })}
+                  aria-label={`${info.name}-Schlüssel`}
+                />
+              )}
+              <div className="row wrap" style={{ gap: 8 }}>
+                <input
+                  className="input"
+                  style={{ maxWidth: 260 }}
+                  placeholder="Modell: automatisch"
+                  value={s[modelField[provider]]}
+                  onChange={(e) => s.set({ [modelField[provider]]: e.target.value.trim() })}
+                  aria-label={`${info.name}-Modell`}
+                />
+                <a className="small" href={info.keyUrl} target="_blank" rel="noopener noreferrer">
+                  Gratis-Schlüssel holen ↗
+                </a>
+                {channels.some((c) => c.provider === provider) && (
+                  <button className="btn btn-sm" onClick={() => testOne(provider)}>
+                    Testen
+                  </button>
+                )}
+              </div>
+              {results[provider] && <span className="help">{results[provider]}</span>}
+            </div>
+          );
+        })}
+    </div>
   );
 }

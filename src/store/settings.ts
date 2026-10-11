@@ -5,7 +5,8 @@ import type { LanguagePreference, Region } from '../lib/types';
 
 export type Theme = 'auto' | 'light' | 'dark';
 export type AiModel = 'claude-opus-5-5' | 'claude-sonnet-5-5' | 'claude-haiku-5-5';
-export type GeminiModel = 'gemini-3.8-flash' | 'gemini-3.5-flash-lite';
+export type GeminiModel = 'gemini-3.8-flash' | 'gemini-3.6-flash' | 'gemini-3.5-flash-lite' | 'gemini-3.1-flash-lite';
+/** Hauptanbieter; Mistral, Groq und OpenRouter sind Ausweich-Kanäle. */
 export type AiProvider = 'gemini' | 'claude';
 
 export interface SettingsState {
@@ -24,6 +25,16 @@ export interface SettingsState {
   /** Gemini-API-Schlüssel aus Google AI Studio für den Direktzugriff aus dem Browser (optional). */
   geminiApiKey: string;
   geminiModel: GeminiModel;
+  /** Ausweich-Kanäle nutzen, wenn der Hauptanbieter nicht antwortet. */
+  fallbackChannels: boolean;
+  /** Schlüssel der Ausweich-Kanäle (optional, bleiben auf dem Gerät). */
+  mistralApiKey: string;
+  groqApiKey: string;
+  openrouterApiKey: string;
+  /** Leer = Modell automatisch wählen. */
+  mistralModel: string;
+  groqModel: string;
+  openrouterModel: string;
   theme: Theme;
   onboarded: boolean;
   goodreadsUserId: string;
@@ -43,6 +54,13 @@ export const useSettings = create<SettingsState>()(
       aiModel: 'claude-opus-5-5',
       geminiApiKey: '',
       geminiModel: 'gemini-3.8-flash',
+      fallbackChannels: true,
+      mistralApiKey: '',
+      groqApiKey: '',
+      openrouterApiKey: '',
+      mistralModel: '',
+      groqModel: '',
+      openrouterModel: '',
       theme: 'auto',
       onboarded: false,
       goodreadsUserId: '',

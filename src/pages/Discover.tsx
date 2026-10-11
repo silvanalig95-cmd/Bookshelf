@@ -4,7 +4,7 @@ import { BookCard, BookGrid } from '../components/BookCard';
 import { BookSearchBox } from '../components/BookSearchBox';
 import { Empty, SkeletonGrid } from '../components/Feedback';
 import type { AiRecommendResult } from '../lib/ai';
-import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
+import { aiAvailability, aiConfigFor, providerName, type AiAccess } from '../lib/aiStatus';
 import {
   DEFAULT_PARAMS,
   describeSearch,
@@ -134,7 +134,7 @@ export default function Discover() {
   const [textDraft, setTextDraft] = useState(params.text);
   const [excludeDraft, setExcludeDraft] = useState('');
   const [ai, setAi] = useState<AiAccess>({ available: false });
-  const aiName = ai.provider === 'claude' ? 'Claude' : 'Gemini';
+  const aiName = ai.provider ? providerName(ai.provider) : 'Die KI';
   const [aiState, setAiState] = useState<AiState>({ loading: false, books: [] });
   const [visible, setVisible] = useState(40);
   const controllerRef = useRef<AbortController | null>(null);

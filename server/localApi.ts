@@ -7,6 +7,9 @@
  * - /api/anthropic/v1/...    → leitet Claude-Anfragen weiter und fügt den Schlüssel
  *                              aus ANTHROPIC_API_KEY hinzu, damit er nie im Browser landet
  * - /api/gemini/v1beta/...   → dasselbe für Google Gemini (GEMINI_API_KEY)
+ * - /api/llm/<anbieter>/...  → Ausweich-Kanäle Mistral, Groq, OpenRouter (MISTRAL_API_KEY …);
+ *                              reicht auch Anfragen mit einem Schlüssel aus dem Browser weiter
+ * - /api/blurbs              → gemerkte KI-Kurzbeschreibungen (für alle Geräte)
  * - /api/sync                → gleicht Bibliothek, Merkliste & Co. zwischen Geräten ab
  *                              (nur wenn ein Datenordner eingerichtet ist, siehe syncStore.ts)
  *
@@ -17,6 +20,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
 import type { Plugin } from 'vite';
+import type { BlurbStore } from './blurbStore.ts';
 import { SyncInputError, type SyncStore } from './syncStore.ts';
 
 type Next = (err?: unknown) => void;
@@ -24,6 +28,8 @@ type Next = (err?: unknown) => void;
 export interface LocalApiOptions {
   anthropicApiKey?: string;
   geminiApiKey?: string;
+  /** Schlüssel der Ausweich-Kanäle. */
+  llmKeys?: Partial<Record<LlmProvider, string>>;
   allowRemote?: boolean;
   /**
    * Darf diese Anfrage die KI-Schlüssel des Servers nutzen? Standard: nur vom
@@ -34,7 +40,17 @@ export interface LocalApiOptions {
   sync?: SyncStore;
   /** Angemeldeter Name dieser Anfrage (null = ohne Login). */
   userOf?: (req: IncomingMessage) => string | null;
+  /** Ablage für KI-Kurzbeschreibungen (nur mit Datenordner). */
+  blurbs?: BlurbStore;
 }
+
+export type LlmProvider = 'mistral' | 'groq' | 'openrouter';
+const LLM_BASE: Record<LlmProvider, string> = {
+  mistral: 'https://api.mistral.ai/v1',
+  groq: 'https://api.groq.com/openai/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+};
+const LLM_PATH = /^\/api\/llm\/(mistral|groq|openrouter)\/(chat\/completions|models)$/;
 
 class RequestTooLarge extends Error {}
 
@@ -122,6 +138,7 @@ export function createLocalApiHandler(options: LocalApiOptions) {
   const canUseAi = (req: IncomingMessage) => Boolean(options.anthropicApiKey) && aiAllowed(req);
   const canUseGemini = (req: IncomingMessage) => Boolean(options.geminiApiKey) && aiAllowed(req);
   const userOf = (req: IncomingMessage) => options.userOf?.(req) ?? null;
+  const canUseLlm = (req: IncomingMessage, p: LlmProvider) => Boolean(options.llmKeys?.[p]) && aiAllowed(req);
   return async function handler(req: IncomingMessage, res: ServerResponse, next: Next) {
     const rawUrl = req.url ?? '';
     if (!rawUrl.startsWith('/api/')) return next();
@@ -133,7 +150,65 @@ export function createLocalApiHandler(options: LocalApiOptions) {
 
     try {
       if (url.pathname === '/api/status') {
-        return sendJson(res, 200, { goodreads: true, ai: canUseAi(req), gemini: canUseGemini(req), sync: Boolean(options.sync), user: userOf(req) });
+        return sendJson(res, 200, {
+          goodreads: true,
+          ai: canUseAi(req),
+          gemini: canUseGemini(req),
+          llm: { mistral: canUseLlm(req, 'mistral'), groq: canUseLlm(req, 'groq'), openrouter: canUseLlm(req, 'openrouter') },
+          sync: Boolean(options.sync),
+          blurbs: Boolean(options.blurbs),
+          user: userOf(req),
+        });
+      }
+
+      if (url.pathname === '/api/blurbs') {
+        if (!options.blurbs) return sendJson(res, 404, { error: 'Keine Datenablage eingerichtet.' });
+        if (req.method === 'GET') {
+          const found = options.blurbs.get(userOf(req), url.searchParams.get('id') ?? '');
+          return found ? sendJson(res, 200, found) : sendJson(res, 404, { error: 'Noch keine Kurzbeschreibung' });
+        }
+        if (req.method !== 'POST') return sendJson(res, 405, { error: 'Nur GET oder POST' });
+        if (!isSameOriginJson(req)) return sendJson(res, 403, { error: 'Anfrage von fremder Herkunft abgelehnt.' });
+        let input: { id?: unknown; text?: unknown; model?: unknown };
+        try {
+          input = JSON.parse((await readBody(req, 20_000)).toString('utf8')) as typeof input;
+        } catch {
+          return sendJson(res, 400, { error: 'Ungültiges JSON' });
+        }
+        const ok =
+          typeof input.id === 'string' && typeof input.text === 'string' && options.blurbs.set(userOf(req), input.id, input.text, typeof input.model === 'string' ? input.model : '');
+        return ok ? sendJson(res, 200, { ok: true }) : sendJson(res, 400, { error: 'Ungültige Kurzbeschreibung' });
+      }
+
+      const llm = url.pathname.match(LLM_PATH);
+      if (llm) {
+        const provider = llm[1] as LlmProvider;
+        // Schlüssel aus dem Browser (wird nur durchgereicht) oder der des Servers (nur mit Login)
+        const browserKey = String(req.headers['x-llm-key'] ?? '').trim();
+        const key = browserKey || (canUseLlm(req, provider) ? options.llmKeys?.[provider] : undefined);
+        if (!key) {
+          return sendJson(res, options.llmKeys?.[provider] ? 403 : 503, {
+            error: options.llmKeys?.[provider]
+              ? 'Den Schlüssel des Servers dürfen nur angemeldete Personen nutzen (LESEKOMPASS_AUTH setzen).'
+              : `${provider.toUpperCase()}_API_KEY ist auf dem Server nicht gesetzt.`,
+          });
+        }
+        const isChat = llm[2] === 'chat/completions';
+        if (isChat ? req.method !== 'POST' || !isSameOriginJson(req) : req.method !== 'GET') return sendJson(res, 405, { error: 'Nicht unterstützte Anfrage' });
+        const headers: Record<string, string> = { authorization: `Bearer ${key}`, 'content-type': 'application/json' };
+        if (provider === 'openrouter') headers['x-title'] = 'Lesekompass';
+        const upstream = await fetch(`${LLM_BASE[provider]}/${llm[2]}`, {
+          method: isChat ? 'POST' : 'GET',
+          headers,
+          body: isChat ? new Uint8Array(await readBody(req)) : undefined,
+        });
+        res.statusCode = upstream.status;
+        const type = upstream.headers.get('content-type');
+        if (type) res.setHeader('content-type', type);
+        res.setHeader('cache-control', 'no-store');
+        if (!upstream.body) return res.end();
+        Readable.fromWeb(upstream.body as import('node:stream/web').ReadableStream).pipe(res);
+        return;
       }
 
       if (url.pathname === '/api/sync') {

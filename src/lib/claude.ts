@@ -18,6 +18,7 @@ import {
   type AiRecommendResult,
   type ChatReply,
   type ChatTurn,
+  type AiTaskOptions,
 } from './aiPrompts';
 
 function makeClient(config: AiConfig): Anthropic {
@@ -95,24 +96,25 @@ function toMessages(history: ChatTurn[]): Message[] {
 }
 
 export async function claudeChat(history: ChatTurn[], config: AiConfig, context: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
-  return streamText(config, [`${BASE_SYSTEM}\n\n${CHAT_INSTRUCTIONS}`, `Lesekontext der Person:\n${context}`], toMessages(history), onText, signal);
+  return streamText(config, [`${BASE_SYSTEM}\n\n${CHAT_INSTRUCTIONS}`, `Lesekontext der Person:\n${context}`], toMessages(history), onText, { signal });
 }
 
 /** Ein einzelner Auftrag mit freier Textantwort (z. B. die Kurzbeschreibung auf der Buchseite). */
-export async function claudeText(config: AiConfig, systemParts: string[], prompt: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
-  return streamText(config, systemParts, [{ role: 'user', content: prompt }], onText, signal);
+export async function claudeText(config: AiConfig, systemParts: string[], prompt: string, onText: (delta: string) => void, opts: AiTaskOptions = {}): Promise<ChatReply> {
+  return streamText(config, systemParts, [{ role: 'user', content: prompt }], onText, opts);
 }
 
-async function streamText(config: AiConfig, systemParts: string[], messages: Message[], onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
+async function streamText(config: AiConfig, systemParts: string[], messages: Message[], onText: (delta: string) => void, opts: AiTaskOptions = {}): Promise<ChatReply> {
+  const signal = opts.signal;
   const client = makeClient(config);
   try {
     const stream = client.beta.messages.stream(
       {
         model: config.model,
-        max_tokens: 64000,
+        max_tokens: opts.light ? 2000 : 64000,
         ...fallbackParams(config.model),
         cache_control: { type: 'ephemeral' },
-        output_config: { effort: 'medium' },
+        output_config: { effort: opts.light ? 'low' : 'medium' },
         system: systemParts.map((text) => ({ type: 'text' as const, text })),
         messages,
       },

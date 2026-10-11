@@ -17,7 +17,7 @@ import { displaySubjects, languageLabel, subjectLabel } from '../lib/taxonomy';
 import { solrPhrase, uniq } from '../lib/text';
 import type { Book, Edition } from '../lib/types';
 import { useSettings } from '../store/settings';
-import { readBlurb, writeBlurb } from '../lib/blurbCache';
+import { fetchSharedBlurb, readBlurb, shareBlurb, writeBlurb } from '../lib/blurbCache';
 import { contentSummary, deeplUrl, germanWikipediaSummary, guessLanguage } from '../lib/wikipedia';
 import type { AiConfig } from '../lib/aiPrompts';
 import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
@@ -471,33 +471,44 @@ function ForeignBlurb({ text, lang, open = false }: { text: string; lang?: strin
   );
 }
 
-/** Kurze, spoilerfreie deutsche Beschreibung von der KI – auf Wunsch erzeugt und auf dem Gerät gemerkt. */
+/** Kurze, spoilerfreie deutsche Beschreibung von der KI – auf Wunsch erzeugt, gemerkt und mit den anderen Geräten geteilt. */
 function AiBlurb({ book, description, config, prominent }: { book: Book; description?: string; config?: AiConfig; prominent?: boolean }) {
   const entries = useLibraryEntries();
   const profile = useProfile();
-  const [state, setState] = useState<{ text?: string; model?: string; busy?: boolean; error?: string }>({});
-  useEffect(() => setState(readBlurb(book.id) ?? {}), [book.id]);
+  const [state, setState] = useState<{ text?: string; model?: string; note?: string; busy?: boolean; error?: string }>({});
+  useEffect(() => {
+    const local = readBlurb(book.id);
+    setState(local ?? {});
+    if (local) return;
+    // Vielleicht hat ein anderes Gerät sie schon erzeugt
+    const controller = new AbortController();
+    fetchSharedBlurb(book.id, controller.signal).then((shared) => shared && setState((s) => (s.text || s.busy ? s : shared)));
+    return () => controller.abort();
+  }, [book.id]);
 
   if (!state.text && !state.busy && !config) return null;
 
   const run = async () => {
     if (!config) return;
-    const { aiErrorMessage, aiText, BLURB_SYSTEM, blurbPrompt, readingContext, AI_MODEL_NAMES } = await import('../lib/ai');
+    const { aiErrorMessage, aiText, BLURB_SYSTEM, blurbPrompt, compactReadingContext, AI_MODEL_NAMES } = await import('../lib/ai');
     let acc = '';
     setState({ busy: true, text: '' });
     try {
       const reply = await aiText(
         config,
-        [BLURB_SYSTEM, `Lesekontext der Person:\n${readingContext(entries, profile)}`],
+        // Knapper Lesekontext und ein günstiges Modell: eine Kurzbeschreibung braucht nicht die ganze Bibliothek
+        [BLURB_SYSTEM, `Lesekontext der Person:\n${compactReadingContext(entries, profile)}`],
         blurbPrompt({ title: book.title, author: book.authors[0] ?? 'unbekannt', year: book.year, originalTitle: book.originalTitle, description, subjects: book.subjects }),
         (delta) => {
           acc += delta;
           setState({ busy: true, text: acc });
         },
+        { light: true },
       );
-      const done = { text: reply.text.trim(), model: AI_MODEL_NAMES[reply.model] ?? reply.model };
+      const done = { text: reply.text.trim(), model: AI_MODEL_NAMES[reply.model] ?? reply.model, note: reply.note };
       setState(done);
-      writeBlurb(book.id, done);
+      writeBlurb(book.id, { text: done.text, model: done.model });
+      shareBlurb(book.id, { text: done.text, model: done.model });
     } catch (err) {
       setState({ error: aiErrorMessage(err) });
     }
@@ -515,7 +526,11 @@ function AiBlurb({ book, description, config, prominent }: { book: Book; descrip
               {p.trim()}
             </p>
           ))}
-        {!state.busy && <div className="tiny muted">KI-Zusammenfassung{state.model ? ` · ${state.model}` : ''} – kann Fehler enthalten.</div>}
+        {!state.busy && (
+          <div className="tiny muted">
+            KI-Zusammenfassung{state.model ? ` · ${state.model}` : ''} – kann Fehler enthalten.{state.note ? ` ${state.note}` : ''}
+          </div>
+        )}
       </div>
     );
   }

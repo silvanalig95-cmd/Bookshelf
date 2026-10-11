@@ -132,7 +132,17 @@ Für „KI fragen“ und den KI-Bibliothekar. Am einfachsten und gratis ist **Go
 GEMINI_API_KEY=dein-schlüssel
 ```
 
-Der Gratis-Tarif hat Minuten- und Tageslimits (AI Studio zeigt sie unter *Rate limit*). Ist das Kontingent von *Gemini 3.8 Flash* aufgebraucht, antwortet automatisch *Gemini 3.5 Flash-Lite*; das Tageslimit setzt sich um 9 Uhr zurück. Im Gratis-Tarif darf Google die Anfragen – also auch deine Leseliste – zur Verbesserung seiner Produkte verwenden.
+Der Gratis-Tarif hat Minuten- und Tageslimits (AI Studio zeigt sie unter *Rate limit*) – und zwar je Modell. Ist das Kontingent von *Gemini 3.8 Flash* aufgebraucht, antworten automatisch die anderen Gemini-Modelle (3.6 Flash, 3.5 Flash-Lite, 3.1 Flash-Lite); das Tageslimit setzt sich um 9 Uhr zurück. Kurzbeschreibungen beginnen ohnehin bei Flash-Lite und werden auf dem Server gemerkt, damit jedes Buch nur einmal Anfragen kostet. Im Gratis-Tarif darf Google die Anfragen – also auch deine Leseliste – zur Verbesserung seiner Produkte verwenden.
+
+**Reicht das nicht, Ausweich-Kanäle eintragen** (alle gratis, je ein paar Minuten Anmeldung). Sie springen der Reihe nach ein, wenn Gemini nicht mehr antwortet:
+
+```
+MISTRAL_API_KEY=...      # https://console.mistral.ai/api-keys  (gutes Deutsch)
+GROQ_API_KEY=...         # https://console.groq.com/keys        (sehr schnell)
+OPENROUTER_API_KEY=...   # https://openrouter.ai/settings/keys  (rund 50 Anfragen pro Tag)
+```
+
+Unter **Einstellungen → KI → Ausweich-Kanäle** lässt sich jeder Kanal einzeln testen. Antwortet ein Ausweich-Kanal, steht das klein unter der Antwort.
 
 Lieber **Claude** von Anthropic (kostet wenige Rappen pro Frage)? Dann stattdessen oder zusätzlich `ANTHROPIC_API_KEY=sk-ant-...` eintragen. Welcher Anbieter antwortet, wählst du in der App unter **Einstellungen → KI**.
 

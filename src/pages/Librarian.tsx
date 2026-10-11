@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { bookPath } from '../components/BookCard';
 import { Cover } from '../components/Cover';
 import { AI_MODEL_NAMES, aiAvailability, aiChat, aiConfigFor, aiErrorMessage, parseBookRefs, readingContext, type ChatTurn } from '../lib/ai';
-import type { AiAccess } from '../lib/aiStatus';
+import { providerName, type AiAccess } from '../lib/aiStatus';
 import { useLibraryEntries, useProfile } from '../lib/hooks';
 import { resolveBook } from '../lib/resolve';
 import type { Book } from '../lib/types';
@@ -115,7 +115,7 @@ export default function Librarian() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.aiProvider, settings.aiApiKey, settings.geminiApiKey]);
   const config = ai ? aiConfigFor(ai, settings) : undefined;
-  const aiName = config?.provider === 'claude' ? 'Claude' : 'Gemini';
+  const aiName = config ? providerName(config.provider) : 'Die KI';
 
   useEffect(() => {
     const buch = params.get('buch');

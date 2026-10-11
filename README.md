@@ -73,7 +73,7 @@ Danach ordnet Lesekompass deine Bücher im Hintergrund den Werken bei Open Libra
 
 Für „KI fragen“ in der Suche und den KI-Bibliothekar brauchst du einen API-Schlüssel – Anbieter und Modell wählst du unter **Einstellungen → KI**:
 
-- **Google Gemini** – gratis mit Minuten- und Tageslimit. Schlüssel auf [aistudio.google.com/apikey](https://aistudio.google.com/apikey) erstellen. Standard ist *Gemini 3.8 Flash*; ist dessen Gratis-Kontingent aufgebraucht, antwortet automatisch *Gemini 3.5 Flash-Lite*. Im Gratis-Tarif darf Google die Anfragen zur Verbesserung seiner Produkte verwenden.
+- **Google Gemini** – gratis mit Minuten- und Tageslimit. Schlüssel auf [aistudio.google.com/apikey](https://aistudio.google.com/apikey) erstellen. Standard ist *Gemini 3.8 Flash*; jedes Gemini-Modell hat ein eigenes Gratis-Kontingent, ist eines aufgebraucht, antwortet automatisch das nächste (3.6 Flash, 3.5 Flash-Lite, 3.1 Flash-Lite). Im Gratis-Tarif darf Google die Anfragen zur Verbesserung seiner Produkte verwenden.
 - **Claude** von Anthropic – Schlüssel von [console.anthropic.com](https://console.anthropic.com/settings/keys), Abrechnung nach Verbrauch (mit Claude Opus 5.5 typischerweise 5–15 Rappen pro Anfrage, mit Sonnet oder Haiku deutlich weniger).
 
 **Empfohlen – Schlüssel bleibt auf deinem Computer:** Datei `.env` im Projektordner anlegen (Vorlage: `.env.example`):
@@ -85,7 +85,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 (einer genügt) und `npm start` neu ausführen. Alternativ kannst du den Schlüssel unter **Einstellungen → KI** eintragen; er wird dann nur in diesem Browser gespeichert.
 
-Die KI bekommt dabei eine kompakte Zusammenfassung deiner Bibliothek (Lieblingsbücher, Abneigungen, gelesene Titel), damit sie nichts Gelesenes empfiehlt und deinen Geschmack trifft.
+Die KI bekommt dabei eine kompakte Zusammenfassung deiner Bibliothek (Lieblingsbücher, Abneigungen, gelesene Titel), damit sie nichts Gelesenes empfiehlt und deinen Geschmack trifft. Kurzbeschreibungen auf der Buchseite sind sparsam: günstiges Modell, kaum „Nachdenken“, nur ein knapper Lesekontext – und mit Server wird jede Beschreibung nur einmal erzeugt und dann auf allen Geräten gezeigt.
+
+**Ausweich-Kanäle:** Ist das Gemini-Kontingent ganz aufgebraucht, springen der Reihe nach Gratis-Dienste ein – [Mistral](https://console.mistral.ai/api-keys), [Groq](https://console.groq.com/keys) und [OpenRouter](https://openrouter.ai/settings/keys) (Schlüssel als `MISTRAL_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` in der `.env` oder unter **Einstellungen → KI**), zuletzt Claude, falls eingerichtet. Das Modell wählt die App automatisch aus der aktuellen Modellliste des Anbieters.
 
 ### 📗 Google Books
 

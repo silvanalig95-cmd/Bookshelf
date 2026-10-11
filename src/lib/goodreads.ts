@@ -193,6 +193,10 @@ export interface LocalApiStatus {
   sync: boolean;
   /** Angemeldeter Name (null = ohne Login). */
   user: string | null;
+  /** Schlüssel der Ausweich-Kanäle auf dem Server (Mistral, Groq, OpenRouter). */
+  llm?: Partial<Record<'mistral' | 'groq' | 'openrouter', boolean>>;
+  /** Server merkt sich KI-Kurzbeschreibungen für alle Geräte. */
+  blurbs?: boolean;
 }
 
 export async function localApiStatus(): Promise<LocalApiStatus> {

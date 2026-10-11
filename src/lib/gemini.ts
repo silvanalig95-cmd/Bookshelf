@@ -4,7 +4,9 @@
  *
  * Schlüssel: GEMINI_API_KEY auf dem Server (der Browser spricht nur mit /api/gemini) oder ein
  * Schlüssel aus Google AI Studio in den Einstellungen. Im Gratis-Tarif gelten Minuten- und
- * Tageslimits; ist das Kontingent von „3.8 Flash“ erschöpft, antwortet „3.5 Flash-Lite“.
+ * Tageslimits – und zwar je Modell. Ist das Kontingent eines Modells erschöpft, antwortet das
+ * nächste aus GEMINI_CHAIN mit demselben Schlüssel. Kleine Aufgaben (Kurzbeschreibungen)
+ * beginnen bei den Flash-Lite-Modellen und schonen so das Kontingent des Hauptmodells.
  */
 import { z } from 'zod';
 import {
@@ -12,20 +14,50 @@ import {
   AiRecommendationSchema,
   BASE_SYSTEM,
   CHAT_INSTRUCTIONS,
-  cleanRecommendation,
+  parseRecommendationJson,
   recommendInstruction,
   vocabulary,
   type AiConfig,
   type AiRecommendResult,
+  type AiTaskOptions,
   type ChatReply,
   type ChatTurn,
 } from './aiPrompts';
+import { sseData } from './sse';
 
 export const GEMINI_MODELS: Record<string, string> = {
   'gemini-3.8-flash': 'Gemini 3.8 Flash',
+  'gemini-3.6-flash': 'Gemini 3.6 Flash',
   'gemini-3.5-flash-lite': 'Gemini 3.5 Flash-Lite',
+  'gemini-3.1-flash-lite': 'Gemini 3.1 Flash-Lite',
 };
+/** Reihenfolge beim Ausweichen innerhalb von Gemini (jedes Modell hat ein eigenes Gratis-Kontingent). */
+export const GEMINI_CHAIN = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+/** Für kleine Aufgaben: zuerst die günstigen Modelle. */
+export const GEMINI_LIGHT_CHAIN = ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.8-flash'];
 export const GEMINI_FALLBACK_MODEL = 'gemini-3.5-flash-lite';
+
+/** Unterstützte Denkstufen je Modell (laut Dokumentation); unbekannte Modelle bekommen keine Vorgabe. */
+const THINKING: Record<string, string[]> = {
+  'gemini-3.8-flash': ['LOW', 'MEDIUM', 'HIGH'],
+  'gemini-3.6-flash': ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'],
+  'gemini-3.5-flash-lite': ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'],
+};
+
+/** Gewünschte Denkstufe – oder die nächsthöhere, die das Modell kann. */
+export function thinkingFor(model: string, wanted: 'MINIMAL' | 'LOW' | 'MEDIUM'): { thinkingConfig?: { thinkingLevel: string } } {
+  const levels = THINKING[model];
+  if (!levels) return {};
+  const order = ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'];
+  const level = order.slice(order.indexOf(wanted)).find((l) => levels.includes(l));
+  return level ? { thinkingConfig: { thinkingLevel: level } } : {};
+}
+
+/** Modelle in der Reihenfolge, in der sie versucht werden. */
+export function modelChain(selected: string, light = false): string[] {
+  const chain = light ? GEMINI_LIGHT_CHAIN : [selected, ...GEMINI_CHAIN];
+  return chain.filter((m, i) => chain.indexOf(m) === i);
+}
 const API = 'https://generativelanguage.googleapis.com';
 
 interface Part {
@@ -52,6 +84,8 @@ export class GeminiError extends AiError {
     message: string,
     readonly status: number,
     readonly detail: string,
+    /** Kommt die Meldung von Google selbst (nicht vom eigenen Server, z. B. „kein Schlüssel hinterlegt“)? */
+    readonly fromGoogle = true,
   ) {
     super(message);
   }
@@ -84,47 +118,58 @@ function friendlyMessage(http: number, status: string, message: string, config: 
 async function errorFrom(res: Response, config: AiConfig): Promise<GeminiError> {
   let message = '';
   let status = '';
+  let fromGoogle = true;
   try {
     const body = (await res.json()) as { error?: string | { message?: string; status?: string } };
-    if (typeof body.error === 'string') message = body.error;
-    else {
+    if (typeof body.error === 'string') {
+      message = body.error;
+      fromGoogle = false;
+    } else {
       message = body.error?.message ?? '';
       status = body.error?.status ?? '';
     }
   } catch {
     /* keine JSON-Antwort */
   }
-  return new GeminiError(friendlyMessage(res.status, status, message, config), res.status, message);
+  return new GeminiError(friendlyMessage(res.status, status, message, config), res.status, message, fromGoogle);
 }
 
 /**
- * Schickt die Anfrage – und weicht bei erschöpftem Gratis-Kontingent (HTTP 429) einmal auf
- * Flash-Lite aus, das ein grösseres Kontingent hat.
+ * Schickt die Anfrage – und weicht bei erschöpftem Kontingent (429), Überlastung (5xx) oder
+ * nicht verfügbarem Modell (404) auf das nächste Modell der Kette aus.
  */
-async function post(config: AiConfig, method: Method, body: unknown, signal?: AbortSignal): Promise<{ res: Response; model: string; note?: string }> {
+async function post(
+  config: AiConfig,
+  method: Method,
+  bodyFor: (model: string) => unknown,
+  opts: { signal?: AbortSignal; light?: boolean } = {},
+): Promise<{ res: Response; model: string; note?: string }> {
   const attempt = async (model: string) => {
     const { url, headers } = endpoint(config, model, method);
     try {
-      return await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
+      return await fetch(url, { method: 'POST', headers, body: JSON.stringify(bodyFor(model)), signal: opts.signal });
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') throw err;
-      throw new AiError('Keine Verbindung zu Gemini.');
+      throw new GeminiError('Keine Verbindung zu Gemini.', 0, '');
     }
   };
-  const res = await attempt(config.model);
-  if (res.ok) return { res, model: config.model };
-  if (res.status === 429 && config.model !== GEMINI_FALLBACK_MODEL) {
-    const second = await attempt(GEMINI_FALLBACK_MODEL);
-    if (second.ok) {
-      return {
-        res: second,
-        model: GEMINI_FALLBACK_MODEL,
-        note: `Das Gratis-Kontingent von ${modelName(config.model)} ist gerade aufgebraucht – diese Antwort kommt von ${modelName(GEMINI_FALLBACK_MODEL)}.`,
-      };
+  const chain = modelChain(config.model, opts.light);
+  let firstError: GeminiError | undefined;
+  for (const model of chain) {
+    const res = await attempt(model);
+    if (res.ok) {
+      const note =
+        firstError && model !== chain[0]
+          ? `Das Gratis-Kontingent von ${modelName(chain[0])} ist gerade aufgebraucht – diese Antwort kommt von ${modelName(model)}.`
+          : undefined;
+      return { res, model, note };
     }
-    throw await errorFrom(second, { ...config, model: GEMINI_FALLBACK_MODEL });
+    const err = await errorFrom(res, { ...config, model });
+    firstError ??= err;
+    // Nur bei Kontingent, Überlastung oder fehlendem Modell lohnt das nächste Modell
+    if (!err.fromGoogle || ![429, 404, 500, 502, 503, 504].includes(res.status)) throw err;
   }
-  throw await errorFrom(res, config);
+  throw firstError!;
 }
 
 const REFUSED = new Set(['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION']);
@@ -161,26 +206,8 @@ export function geminiSchema(schema: z.ZodType): unknown {
   return walk(z.toJSONSchema(schema));
 }
 
-/** Fehlende optionale Felder ergänzen, bevor das Schema streng prüft. */
-function withDefaults(raw: unknown): unknown {
-  const r = cleanRecommendation(raw) as { recommendations?: Array<Record<string, unknown>>; search?: Record<string, unknown> } | undefined;
-  if (!r || typeof r !== 'object') return r;
-  r.search = { genres: [], moods: [], places: [], eras: [], keywords: [], pages_max: null, pages_min: null, ...(r.search ?? {}) };
-  r.recommendations = (r.recommendations ?? []).map((x) => ({ original_title: null, year: null, german_edition: false, tags: [], why: '', ...x }));
-  return r;
-}
-
 export function parseRecommendation(text: string): AiRecommendResult {
-  const json = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  let data: unknown;
-  try {
-    data = JSON.parse(json);
-  } catch {
-    throw new AiError('Die Antwort von Gemini konnte nicht gelesen werden. Bitte nochmal versuchen.');
-  }
-  const parsed = AiRecommendationSchema.safeParse(withDefaults(data));
-  if (!parsed.success) throw new AiError('Die Antwort von Gemini hatte nicht das erwartete Format. Bitte nochmal versuchen.');
-  return parsed.data;
+  return parseRecommendationJson(text, 'Gemini');
 }
 
 function system(parts: string[]) {
@@ -198,14 +225,18 @@ export async function geminiRecommend(
     systemInstruction: system([`${BASE_SYSTEM}\n\nVokabular für die Suchparameter:\n${vocabulary()}`, `Lesekontext der Person:\n${context}`]),
     contents: [{ role: 'user', parts: [{ text: recommendInstruction(wish, options.count ?? 8) }] }] satisfies Content[],
   };
-  const thinking = { maxOutputTokens: 16384, thinkingConfig: { thinkingLevel: 'MEDIUM' } };
+  const thinking = (model: string) => ({ maxOutputTokens: 16384, ...thinkingFor(model, 'MEDIUM') });
   let result: { res: Response; model: string; note?: string };
   try {
-    result = await post(config, 'generateContent', { ...base, generationConfig: { ...thinking, responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema } } } }, options.signal);
+    result = await post(config, 'generateContent', (m) => ({ ...base, generationConfig: { ...thinking(m), responseFormat: { text: { mimeType: 'APPLICATION_JSON', schema } } } }), {
+      signal: options.signal,
+    });
   } catch (err) {
     // Ältere Fassung der Schnittstelle: Schema über responseMimeType/responseJsonSchema
     if (!(err instanceof GeminiError) || err.status !== 400 || !/responseFormat|unknown name|invalid json payload/i.test(err.detail)) throw err;
-    result = await post(config, 'generateContent', { ...base, generationConfig: { ...thinking, responseMimeType: 'application/json', responseJsonSchema: schema } }, options.signal);
+    result = await post(config, 'generateContent', (m) => ({ ...base, generationConfig: { ...thinking(m), responseMimeType: 'application/json', responseJsonSchema: schema } }), {
+      signal: options.signal,
+    });
   }
   const data = (await result.res.json()) as GenerateResponse;
   const parsed = parseRecommendation(answerText(data));
@@ -221,49 +252,25 @@ function toContents(history: ChatTurn[]): Content[] {
   );
 }
 
-/** Zerlegt einen Server-Sent-Events-Strom in die einzelnen `data:`-Inhalte. */
-export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator<string> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  const take = function* (final: boolean) {
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    buffer = final ? '' : (blocks.pop() ?? '');
-    for (const block of blocks) {
-      const data = block
-        .split(/\r?\n/)
-        .filter((l) => l.startsWith('data:'))
-        .map((l) => l.slice(5).replace(/^ /, ''))
-        .join('\n');
-      if (data.trim()) yield data;
-    }
-  };
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    yield* take(false);
-  }
-  buffer += decoder.decode();
-  yield* take(true);
-}
+export { sseData } from './sse';
 
 export async function geminiChat(history: ChatTurn[], config: AiConfig, context: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
-  return streamText(config, [`${BASE_SYSTEM}\n\n${CHAT_INSTRUCTIONS}`, `Lesekontext der Person:\n${context}`], toContents(history), onText, signal);
+  return streamText(config, [`${BASE_SYSTEM}\n\n${CHAT_INSTRUCTIONS}`, `Lesekontext der Person:\n${context}`], toContents(history), onText, { signal });
 }
 
 /** Ein einzelner Auftrag mit freier Textantwort (z. B. die Kurzbeschreibung auf der Buchseite). */
-export async function geminiText(config: AiConfig, systemParts: string[], prompt: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
-  return streamText(config, systemParts, [{ role: 'user', parts: [{ text: prompt }] }], onText, signal);
+export async function geminiText(config: AiConfig, systemParts: string[], prompt: string, onText: (delta: string) => void, opts: AiTaskOptions = {}): Promise<ChatReply> {
+  return streamText(config, systemParts, [{ role: 'user', parts: [{ text: prompt }] }], onText, opts);
 }
 
-async function streamText(config: AiConfig, systemParts: string[], contents: Content[], onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
-  const body = {
+async function streamText(config: AiConfig, systemParts: string[], contents: Content[], onText: (delta: string) => void, opts: AiTaskOptions = {}): Promise<ChatReply> {
+  const bodyFor = (model: string) => ({
     systemInstruction: system(systemParts),
     contents,
-    generationConfig: { maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: 'LOW' } },
-  };
-  const { res, model, note } = await post(config, 'streamGenerateContent', body, signal);
+    // Kleine Aufgaben: kaum „Nachdenken“ (spart Tokens) und eine kurze Antwort
+    generationConfig: opts.light ? { maxOutputTokens: 2048, ...thinkingFor(model, 'MINIMAL') } : { maxOutputTokens: 8192, ...thinkingFor(model, 'LOW') },
+  });
+  const { res, model, note } = await post(config, 'streamGenerateContent', bodyFor, { signal: opts.signal, light: opts.light });
   if (!res.body) throw new AiError('Gemini hat keine Antwort geliefert.');
   let text = '';
   let signature: string | undefined;
