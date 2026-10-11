@@ -20,7 +20,6 @@ export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: s
     if (!this.state.error) return this.props.children;
     return (
       <div className="empty">
-        <div className="big">🫣</div>
         <h3>Hoppla – hier ist etwas schiefgelaufen</h3>
         <p className="small">{this.state.error.message}</p>
         <button className="btn" onClick={() => this.setState({ error: undefined })}>

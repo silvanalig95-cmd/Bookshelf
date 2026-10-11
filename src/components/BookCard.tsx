@@ -14,7 +14,7 @@ export function bookPath(book: Book): string {
 interface BookCardProps {
   book: Book;
   scored?: ScoredBook;
-  /** Wie viele Begründungs-Chips höchstens angezeigt werden. */
+  /** Wie viele Gründe höchstens angezeigt werden. */
   maxReasons?: number;
   index?: number;
   origin?: string;
@@ -22,34 +22,31 @@ interface BookCardProps {
   showActions?: boolean;
 }
 
-function matchColor(match: number): string {
-  if (match >= 80) return 'var(--teal)';
-  if (match >= 60) return 'var(--gold)';
-  return 'var(--muted)';
+/** Hat das Werk bekannte Sprachen, aber keine deutsche Ausgabe? */
+function notInGerman(book: Book): boolean {
+  return book.languages.length > 0 && !book.languages.includes('ger') && book.preferredEditionLang !== 'ger';
 }
 
-export const BookCard = memo(function BookCard({ book, scored, maxReasons = 3, index = 0, origin, onDismiss, showActions = true }: BookCardProps) {
+export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, origin, onDismiss, showActions = true }: BookCardProps) {
   const saved = useWishlist((s) => Boolean(s.items[book.id]));
   const toggle = useWishlist((s) => s.toggle);
   const record = useSignals((s) => s.record);
   const openRating = useUi((s) => s.openRating);
   const path = bookPath(book);
   const isbn = book.isbns?.[0];
+  // „Auf Deutsch“ ist der Normalfall – erwähnt wird nur, wenn es keine deutsche Ausgabe gibt
+  const why = (scored?.reasons ?? []).filter((r) => r.kind !== 'ai' && r.kind !== 'german').slice(0, maxReasons).map((r) => r.label);
+  if (notInGerman(book)) why.push('nicht auf Deutsch');
+  const match = scored && scored.match > 0 ? scored.match : 0;
 
   return (
-    <article className="book-card" style={{ animationDelay: `${Math.min(index, 16) * 35}ms` }}>
+    <article className="book-card">
       <div style={{ position: 'relative' }}>
         <Link to={path} className="cover-link" onClick={() => rememberBook(book)} aria-label={`${book.title} öffnen`}>
           <Cover title={book.title} author={book.authors[0]} coverId={book.coverId} src={book.coverUrl} fallbacks={isbn ? [isbnCoverUrl(isbn)] : []} />
         </Link>
-        {scored && scored.match > 0 && (
-          <span className="match-badge" title="Wie gut das Buch zu deiner Suche passt">
-            <span className="match-ring" style={{ '--p': scored.match, '--ring': matchColor(scored.match) } as React.CSSProperties} />
-            {scored.match}%
-          </span>
-        )}
         {scored?.alreadyRead && (
-          <span className="read-badge tag teal" title="Steht in deiner Bibliothek">
+          <span className="read-badge tag" title="Steht in deiner Bibliothek">
             ✓ gelesen
           </span>
         )}
@@ -103,17 +100,12 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 3, i
               {r.label}
             </p>
           ))}
-        {scored && scored.reasons.some((r) => r.kind !== 'ai') && (
-          <div className="reasons">
-            {scored.reasons
-              .filter((r) => r.kind !== 'ai')
-              .slice(0, maxReasons)
-              .map((r) => (
-              <span key={r.label} title={r.label} className={`tag ${r.kind === 'taste' ? 'gold' : r.kind === 'german' ? 'teal' : r.kind === 'ai' ? 'violet' : r.kind === 'fame' ? 'rose' : ''}`}>
-                {r.label}
-              </span>
-            ))}
-          </div>
+        {(match > 0 || why.length > 0) && (
+          <span className="why" title={[match ? `${match} % Übereinstimmung` : '', ...why].filter(Boolean).join(' · ')}>
+            {match > 0 && <b>{match} %</b>}
+            {match > 0 && why.length > 0 && ' · '}
+            {why.join(' · ')}
+          </span>
         )}
       </div>
     </article>
@@ -147,14 +139,12 @@ export function BookGrid({
 export function BookRow({
   title,
   subtitle,
-  icon,
   items,
   action,
   origin,
 }: {
   title: string;
   subtitle?: string;
-  icon?: string;
   items: Array<Book | ScoredBook>;
   action?: React.ReactNode;
   origin?: string;
@@ -163,9 +153,7 @@ export function BookRow({
     <section className="shelf-row">
       <div className="shelf-row-head">
         <div>
-          <h2>
-            {icon && <span>{icon}</span>} {title}
-          </h2>
+          <h2>{title}</h2>
           {subtitle && <p>{subtitle}</p>}
         </div>
         {action}

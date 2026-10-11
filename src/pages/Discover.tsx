@@ -26,20 +26,23 @@ import { useSettings } from '../store/settings';
 import { recallBook, rememberBook } from '../store/ui';
 
 const LENGTH_PRESETS = [
-  { id: 'novelle', label: '🪶 Novelle', min: undefined, max: 180 },
-  { id: 'kurz', label: '⏱️ Kurz', min: undefined, max: 300 },
-  { id: 'mittel', label: '📘 Mittel', min: 250, max: 450 },
-  { id: 'dick', label: '📚 Dick', min: 450, max: undefined },
-  { id: 'waelzer', label: '🧱 Wälzer', min: 700, max: undefined },
+  { id: 'novelle', label: 'Novelle', min: undefined, max: 180 },
+  { id: 'kurz', label: 'Kurz', min: undefined, max: 300 },
+  { id: 'mittel', label: 'Mittel', min: 250, max: 450 },
+  { id: 'dick', label: 'Dick', min: 450, max: undefined },
+  { id: 'waelzer', label: 'Wälzer', min: 700, max: undefined },
 ] as const;
 
 const YEAR = new Date().getFullYear();
 const YEAR_PRESETS = [
-  { id: 'neu', label: '✨ Neuerscheinungen', from: YEAR - 2, to: undefined },
-  { id: '21', label: '📱 Seit 2000', from: 2000, to: undefined },
-  { id: 'modern', label: '📻 1945–1999', from: 1945, to: 1999 },
-  { id: 'alt', label: '🎩 Vor 1945', from: undefined, to: 1944 },
+  { id: 'neu', label: 'Neuerscheinungen', from: YEAR - 2, to: undefined },
+  { id: '21', label: 'Seit 2000', from: 2000, to: undefined },
+  { id: 'modern', label: '1945–1999', from: 1945, to: 1999 },
+  { id: 'alt', label: 'Vor 1945', from: undefined, to: 1944 },
 ] as const;
+
+/** Auf breiten Bildschirmen stehen die Genres gleich offen; auf dem Handy bleiben die Treffer nah. */
+const WIDE = typeof window !== 'undefined' && window.matchMedia?.('(min-width: 1001px)').matches;
 
 
 function Section({ title, count, children, open = false }: { title: string; count?: number; children: ReactNode; open?: boolean }) {
@@ -257,7 +260,7 @@ export default function Discover() {
             book: b,
             score: 0,
             match: 0,
-            reasons: [{ kind: 'ai', label: `✨ ${rec.why}` }, ...rec.tags.slice(0, 2).map((t) => ({ kind: 'keyword' as const, label: t }))],
+            reasons: [{ kind: 'ai', label: rec.why }, ...rec.tags.slice(0, 2).map((t) => ({ kind: 'keyword' as const, label: t }))],
             alreadyRead: readIndex.has(b),
           };
           return scored;
@@ -313,14 +316,12 @@ export default function Discover() {
   return (
     <div>
       <div className="page-head">
-        <p className="eyebrow">Ausführliche Suche</p>
         <h1>Was möchtest du lesen?</h1>
-        <p>Kombiniere so viele Angaben, wie du magst – jede Änderung aktualisiert die Treffer sofort. Die Prozentzahl zeigt, wie gut ein Buch zu allem passt.</p>
       </div>
 
       <div className="discover">
         <aside className="filters card" aria-label="Suchkriterien" style={{ padding: '6px 18px' }}>
-          <Section title="💬 Dein Wunsch & Stichwörter" open count={(params.wish ? 1 : 0) + (params.text ? 1 : 0)}>
+          <Section title="Wunsch & Stichwörter" open count={(params.wish ? 1 : 0) + (params.text ? 1 : 0)}>
             <div className="field">
               <label htmlFor="wish">In eigenen Worten</label>
               <textarea
@@ -340,11 +341,11 @@ export default function Discover() {
                 </button>
                 {ai.available ? (
                   <button className="btn btn-sm btn-soft" onClick={askAi} disabled={aiState.loading || !(wishDraft || params.wish || params.text).trim()}>
-                    ✨ {aiState.loading ? `${aiName} denkt nach …` : 'KI fragen'}
+                    {aiState.loading ? `${aiName} denkt nach …` : 'KI fragen'}
                   </button>
                 ) : (
                   <Link to="/einstellungen#ki" className="small">
-                    ✨ KI-Empfehlungen aktivieren
+                    KI-Empfehlungen aktivieren
                   </Link>
                 )}
               </div>
@@ -363,7 +364,7 @@ export default function Discover() {
             </div>
           </Section>
 
-          <Section title="🎭 Genres" open count={params.genres.length + params.excludeGenres.length}>
+          <Section title="Genres" open={WIDE} count={params.genres.length + params.excludeGenres.length}>
             <p className="help" style={{ marginTop: 0 }}>
               1× tippen = will ich · 2× = bitte nicht · 3× = egal
             </p>
@@ -375,23 +376,23 @@ export default function Discover() {
                   onClick={() => toggleGenre(g.id)}
                   aria-pressed={params.genres.includes(g.id)}
                 >
-                  {g.emoji} {g.label}
+                  {g.label}
                 </button>
               ))}
             </div>
           </Section>
 
-          <Section title="🌈 Stimmung" open count={params.moods.length}>
+          <Section title="Stimmung" count={params.moods.length}>
             <div className="chips">
               {MOODS.map((m) => (
                 <button key={m.id} className={`chip ${params.moods.includes(m.id) ? 'on' : ''}`} onClick={() => toggleIn('moods', m.id)} title={m.hint} aria-pressed={params.moods.includes(m.id)}>
-                  {m.emoji} {m.label}
+                  {m.label}
                 </button>
               ))}
             </div>
           </Section>
 
-          <Section title="🎚️ Tempo, Anspruch & Bekanntheit" count={[params.tempo, params.depth, params.fame].filter(Boolean).length}>
+          <Section title="Tempo, Anspruch & Bekanntheit" count={[params.tempo, params.depth, params.fame].filter(Boolean).length}>
             <Slider label="Tempo" left="ruhig" right="rasant" value={params.tempo} onChange={(v) => setParams({ tempo: v })} />
             <Slider label="Anspruch" left="leicht" right="anspruchsvoll" value={params.depth} onChange={(v) => setParams({ depth: v })} />
             <Slider
@@ -405,7 +406,7 @@ export default function Discover() {
             />
           </Section>
 
-          <Section title="📏 Länge" count={params.pagesMin || params.pagesMax ? 1 : 0}>
+          <Section title="Länge" count={params.pagesMin || params.pagesMax ? 1 : 0}>
             <div className="chips">
               {LENGTH_PRESETS.map((l) => (
                 <button
@@ -440,11 +441,11 @@ export default function Discover() {
             </div>
           </Section>
 
-          <Section title="📍 Schauplatz" count={params.places.length + (params.placeText ? 1 : 0)}>
+          <Section title="Schauplatz" count={params.places.length + (params.placeText ? 1 : 0)}>
             <div className="chips">
               {PLACES.map((p) => (
                 <button key={p.id} className={`chip ${params.places.includes(p.id) ? 'on' : ''}`} onClick={() => toggleIn('places', p.id)}>
-                  {p.emoji} {p.label}
+                  {p.label}
                 </button>
               ))}
             </div>
@@ -457,12 +458,12 @@ export default function Discover() {
             />
           </Section>
 
-          <Section title="🕰️ Epoche & Erscheinungsjahr" count={params.eras.length + (params.yearFrom || params.yearTo ? 1 : 0)}>
+          <Section title="Epoche & Erscheinungsjahr" count={params.eras.length + (params.yearFrom || params.yearTo ? 1 : 0)}>
             <div className="label">Die Handlung spielt …</div>
             <div className="chips mt-1">
               {ERAS.map((e) => (
                 <button key={e.id} className={`chip ${params.eras.includes(e.id) ? 'on' : ''}`} onClick={() => toggleIn('eras', e.id)}>
-                  {e.emoji} {e.label}
+                  {e.label}
                 </button>
               ))}
             </div>
@@ -485,7 +486,7 @@ export default function Discover() {
             </div>
           </Section>
 
-          <Section title="🔁 Ähnlich wie …" count={params.similarTo.length}>
+          <Section title="Ähnlich wie …" count={params.similarTo.length}>
             <BookSearchBox placeholder="Buch suchen und hinzufügen …" onPick={(b) => setParams({ similarTo: uniqBy([...params.similarTo, toRef(b)], (r) => r.id) })} />
             {params.similarTo.length > 0 && (
               <div className="chips mt-1">
@@ -518,7 +519,7 @@ export default function Discover() {
             )}
           </Section>
 
-          <Section title="✍️ Autor:in & Figuren" count={(params.author ? 1 : 0) + (params.character ? 1 : 0)}>
+          <Section title="Autor:in & Figuren" count={(params.author ? 1 : 0) + (params.character ? 1 : 0)}>
             <div className="field">
               <label htmlFor="author">Autor:in</label>
               <input id="author" className="input" defaultValue={params.author} key={`a-${params.author}`} placeholder="z. B. Juli Zeh" onBlur={(e) => setParams({ author: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && setParams({ author: (e.target as HTMLInputElement).value })} />
@@ -529,7 +530,7 @@ export default function Discover() {
             </div>
           </Section>
 
-          <Section title="🚫 Ausschliessen" count={params.excludeWords.length + params.excludeGenres.length}>
+          <Section title="Ausschliessen" count={params.excludeWords.length + params.excludeGenres.length}>
             <div className="input-group">
               <input
                 className="input"
@@ -559,7 +560,7 @@ export default function Discover() {
             <p className="help">Englische Begriffe treffen die Schlagwörter von Open Library am besten.</p>
           </Section>
 
-          <Section title="⚙️ Sprache, Bewertung & Mehr">
+          <Section title="Sprache, Bewertung & mehr">
             <div className="label">Sprache</div>
             <div className="segmented mt-1">
               {(
@@ -598,10 +599,10 @@ export default function Discover() {
         <section aria-label="Treffer">
           <div className="summary-bar">
             <span className="lead">{criteria ? 'Du suchst:' : 'Noch keine Kriterien –'}</span>
-            {criteria ? summary.map((s) => <span key={s} className="tag accent">{s}</span>) : <span className="muted">hier sind beliebte Bücher auf Deutsch. Wähle links, was dich reizt!</span>}
+            {criteria ? summary.map((s) => <span key={s} className="tag">{s}</span>) : <span className="muted">hier sind beliebte Bücher auf Deutsch. Wähle links, was dich reizt!</span>}
             <span className="spacer" />
-            <button className="btn btn-sm btn-soft" onClick={() => replaceParams(randomParams(params))} title="Zufällige Kombination">
-              🎲 Würfeln
+            <button className="btn btn-sm btn-ghost" onClick={() => replaceParams(randomParams(params))} title="Zufällige Kombination">
+              Würfeln
             </button>
             {criteria && (
               <button
@@ -613,15 +614,15 @@ export default function Discover() {
                   setAiState({ loading: false, books: [] });
                 }}
               >
-                ↺ Zurücksetzen
+                Zurücksetzen
               </button>
             )}
           </div>
 
           {(aiState.loading || aiState.result || aiState.error) && (
-            <div className="card" style={{ marginBottom: 22, borderColor: 'var(--violet)', background: 'linear-gradient(135deg, var(--violet-soft), transparent 60%), var(--surface)' }}>
+            <div className="card" style={{ marginBottom: 22 }}>
               <div className="row between wrap">
-                <span className="ai-badge">✨ {aiName} empfiehlt</span>
+                <span className="ai-badge">{aiName} empfiehlt</span>
                 {aiState.result && (
                   <button className="btn btn-sm" onClick={applyAiParams}>
                     Suchparameter übernehmen
@@ -639,7 +640,7 @@ export default function Discover() {
                   <p className="mt-1" style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem' }}>
                     {aiState.result.understanding}
                   </p>
-                  {aiState.result.note && <p className="small muted">ℹ️ {aiState.result.note}</p>}
+                  {aiState.result.note && <p className="small muted">{aiState.result.note}</p>}
                   <div className="book-grid">
                     {aiState.books.map((s, i) => (
                       <BookCard key={s.book.id} book={s.book} scored={{ ...s, match: 0 }} index={i} maxReasons={3} origin="KI-Wunsch" />
@@ -669,7 +670,6 @@ export default function Discover() {
 
           {error && (
             <div className="notice rose" style={{ marginBottom: 16 }}>
-              <span className="notice-icon">⚠️</span>
               <div>
                 {error}{' '}
                 <button className="btn btn-sm" onClick={() => run(0)}>
@@ -711,8 +711,8 @@ export default function Discover() {
               </div>
             </div>
           ) : !error ? (
-            <Empty icon="🔍" title="Keine passenden Bücher gefunden">
-              <p>Versuch es mit weniger Kriterien – oder lass dich mit 🎲 überraschen.</p>
+            <Empty title="Keine passenden Bücher gefunden">
+              <p>Versuch es mit weniger Kriterien – oder lass dich mit „Würfeln“ überraschen.</p>
             </Empty>
           ) : null}
         </section>

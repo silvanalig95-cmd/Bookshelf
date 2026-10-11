@@ -7,9 +7,9 @@ import { useSync } from '../store/sync';
 import { Modal } from './Modal';
 
 const REGIONS: Array<{ id: Region; label: string }> = [
-  { id: 'CH', label: '🇨🇭 Schweiz' },
-  { id: 'DE', label: '🇩🇪 Deutschland' },
-  { id: 'AT', label: '🇦🇹 Österreich' },
+  { id: 'CH', label: 'Schweiz' },
+  { id: 'DE', label: 'Deutschland' },
+  { id: 'AT', label: 'Österreich' },
 ];
 
 const LANGS: Array<{ id: LanguagePreference; label: string; hint: string }> = [
@@ -84,7 +84,7 @@ export function Onboarding() {
               Später
             </button>
             <button className="btn btn-primary" onClick={() => finish(true)}>
-              📚 Goodreads verbinden
+              Goodreads verbinden
             </button>
           </div>
         </div>

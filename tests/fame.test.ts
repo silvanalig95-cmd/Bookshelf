@@ -20,7 +20,7 @@ describe('Bekanntheit', () => {
     const unknown = scoreBook(obscure, params)!;
     expect(known.score).toBeGreaterThan(unknown.score + 10);
     expect(known.match).toBeGreaterThan(unknown.match);
-    expect(known.reasons.map((r) => r.label)).toContain('🔥 viel gelesen');
+    expect(known.reasons.map((r) => r.label)).toContain('viel gelesen');
   });
 
   it('dreht das bei „Geheimtipp“ um', () => {

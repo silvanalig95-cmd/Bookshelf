@@ -541,7 +541,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
       const rival = Math.max(0, ...DOMINANT_GENRES.filter((id) => !p.genres.includes(id)).map((id) => countMatches(text, genreById(id)!.match)));
       const strength = rival > own ? 0.5 : 1;
       s += (30 + Math.min(10, (matched.length - 1) * 5)) * spec * strength;
-      for (const g of matched.slice(0, 2)) reasons.push({ kind: 'genre', label: `${g.emoji} ${g.label}` });
+      for (const g of matched.slice(0, 2)) reasons.push({ kind: 'genre', label: g.label });
     } else s -= 12;
   }
   // Stimmungen
@@ -552,7 +552,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     const hits = countMatches(text, m.match);
     if (hits) {
       s += 14 * Math.min(1, 0.6 + hits * 0.2) * spec;
-      reasons.push({ kind: 'mood', label: `${m.emoji} ${m.label}` });
+      reasons.push({ kind: 'mood', label: m.label });
     }
   }
   // Schauplatz
@@ -562,7 +562,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     if (countMatches(text, placeTerms) > 0) {
       s += 18 * spec;
       const label = p.placeText.trim() || p.places.map((id) => placeById(id)?.label).filter(Boolean).join(', ');
-      reasons.push({ kind: 'place', label: `📍 ${label}` });
+      reasons.push({ kind: 'place', label });
     }
   }
   // Epoche
@@ -571,7 +571,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     const matched = p.eras.map(eraById).find((e) => e && countMatches(text, e.match) > 0);
     if (matched) {
       s += 14 * spec;
-      reasons.push({ kind: 'era', label: `${matched.emoji} ${matched.label}` });
+      reasons.push({ kind: 'era', label: matched.label });
     }
   }
   // Figur
@@ -579,7 +579,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     potential += 14;
     if (text.includes(normalize(p.character))) {
       s += 14;
-      reasons.push({ kind: 'character', label: `🎭 ${p.character}` });
+      reasons.push({ kind: 'character', label: `mit ${p.character}` });
     }
   }
   // Konkrete Angaben (Stichwörter, Autor:in, Vergleichsbuch): Wer keine davon erfüllt, ist kein guter Treffer –
@@ -594,7 +594,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     if (book.authors.some((x) => normalize(x).includes(a))) {
       s += 20;
       contentHit = true;
-      reasons.push({ kind: 'author', label: `✍️ ${book.authors[0]}` });
+      reasons.push({ kind: 'author', label: 'gesuchte Autor:in' });
     }
   }
   // Im Wunsch genannte Autor:in (oder Autor:in des genannten Buchs)
@@ -608,7 +608,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     if (book.authorKeys?.includes(lookupAuthor)) {
       s += named ? 20 : 8;
       contentHit = true;
-      reasons.push({ kind: 'author', label: `✍️ ${ctx.wish?.found?.author ?? 'gleiche Autor:in'}` });
+      reasons.push({ kind: 'author', label: named ? 'gesuchte Autor:in' : 'gleiche Autor:in' });
     }
   }
   // Stichwörter
@@ -662,8 +662,8 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     const t = clamp(tm.similarity / 0.3, -1, 1);
     s += weight * t;
     bonus += Math.min(8, tm.authorBonus * 2);
-    if (t > 0.35 && tm.shared.length) reasons.push({ kind: 'taste', label: `💛 dein Geschmack: ${tm.shared.slice(0, 2).join(', ')}` });
-    else if (tm.authorBonus > 1) reasons.push({ kind: 'taste', label: `💛 ${book.authors[0]} magst du` });
+    if (t > 0.35 && tm.shared.length) reasons.push({ kind: 'taste', label: `dein Geschmack: ${tm.shared.slice(0, 2).join(', ')}` });
+    else if (tm.authorBonus > 1) reasons.push({ kind: 'taste', label: `${book.authors[0]} magst du` });
   }
   // Tempo & Anspruch
   const genresOfBook = GENRES.filter((g) => genreMatches(text, g));
@@ -675,7 +675,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     const bookTempo = clamp(gTempo + (fast - slow) * 0.5, -2, 2);
     const fit = 1 - Math.abs(p.tempo - bookTempo) / 4;
     s += 10 * (fit * 2 - 1);
-    if (fit > 0.8) reasons.push({ kind: 'mood', label: p.tempo > 0 ? '⚡ temporeich' : '🍃 ruhig erzählt' });
+    if (fit > 0.8) reasons.push({ kind: 'mood', label: p.tempo > 0 ? 'temporeich' : 'ruhig erzählt' });
   }
   if (p.depth) {
     potential += 10;
@@ -686,7 +686,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     const bookDepth = clamp(gDepth + (high - low) * 0.6 + pagesFactor, -2, 2);
     const fit = 1 - Math.abs(p.depth - bookDepth) / 4;
     s += 10 * (fit * 2 - 1);
-    if (fit > 0.85) reasons.push({ kind: 'mood', label: p.depth > 0 ? '🎓 anspruchsvoll' : '🛋️ leicht zu lesen' });
+    if (fit > 0.85) reasons.push({ kind: 'mood', label: p.depth > 0 ? 'anspruchsvoll' : 'leicht zu lesen' });
   }
   // Bekanntheit
   const pop = popularityLevel(book);
@@ -696,21 +696,21 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     const prior = famePrior(book);
     if (prior !== 0) potential += 10;
     s += 10 * prior;
-    if (prior >= 0.9) reasons.push({ kind: 'fame', label: '🔥 viel gelesen' });
+    if (prior >= 0.9) reasons.push({ kind: 'fame', label: 'viel gelesen' });
   } else {
     potential += 10;
     const target = { '-2': 0.6, '-1': 1.3, '1': 2.4, '2': 3.1 }[String(p.fame)] ?? 2;
     const fit = 1 - Math.min(1, Math.abs(pop - target) / 1.6);
     s += 10 * (fit * 2 - 1);
-    if (p.fame < 0 && pop < 1.6 && (bayes ?? 0) >= 3.9) reasons.push({ kind: 'fame', label: '💎 Geheimtipp' });
-    if (p.fame > 0 && pop > 2.7) reasons.push({ kind: 'fame', label: '🔥 sehr beliebt' });
+    if (p.fame < 0 && pop < 1.6 && (bayes ?? 0) >= 3.9) reasons.push({ kind: 'fame', label: 'Geheimtipp' });
+    if (p.fame > 0 && pop > 2.7) reasons.push({ kind: 'fame', label: 'sehr beliebt' });
   }
   // Alter: ältere Genre-Bücher nur, wenn sie Klassiker sind – ausser es wurde ausdrücklich nach älteren gefragt
   const wantsOld = p.eras.length > 0 || Boolean(p.yearTo) || p.genres.includes('klassiker');
   if (!wantsOld) {
     const age = ageWeight(book);
     s += 14 * age.adj;
-    if (age.classic) reasons.push({ kind: 'fame', label: '📜 Klassiker' });
+    if (age.classic) reasons.push({ kind: 'fame', label: 'Klassiker' });
   }
   // Länge
   if ((p.pagesMin || p.pagesMax) && book.pages) {
@@ -718,7 +718,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     const inRange = (!p.pagesMin || book.pages >= p.pagesMin) && (!p.pagesMax || book.pages <= p.pagesMax);
     if (inRange) {
       s += 6;
-      reasons.push({ kind: 'length', label: `📏 ${book.pages} S.` });
+      reasons.push({ kind: 'length', label: `${book.pages} Seiten` });
     } else s -= 12;
   }
   // Deutsch
@@ -726,7 +726,7 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     potential += 8;
     if (german) {
       s += 8;
-      reasons.push({ kind: 'german', label: '🇩🇪 auf Deutsch' });
+      reasons.push({ kind: 'german', label: 'auf Deutsch' });
     }
   }
   // Bewertung (Bonus)
@@ -874,8 +874,8 @@ export async function runDiscovery(
   sortResults(scored, p.sort);
   // Das ausdrücklich gesuchte Buch steht immer zuerst – auch wenn es schon gelesen ist
   if (pinned) {
-    const reasons: Reason[] = [{ kind: 'keyword', label: '🎯 Dein gesuchtes Buch' }];
-    if (hasGerman(pinned)) reasons.push({ kind: 'german', label: '🇩🇪 auf Deutsch' });
+    const reasons: Reason[] = [{ kind: 'keyword', label: 'dein gesuchtes Buch' }];
+    if (hasGerman(pinned)) reasons.push({ kind: 'german', label: 'auf Deutsch' });
     scored.unshift({ book: pinned, score: Number.MAX_SAFE_INTEGER, match: 99, reasons, alreadyRead: ctx.readIndex?.has(pinned) ?? false });
   }
   const total = Math.max(0, ...responses.map((r) => r?.total ?? 0));
@@ -930,9 +930,9 @@ export function originalWord(text: string, normalized: string): string {
 export function describeSearch(params: DiscoveryParams, wish?: WishInterpretation): string[] {
   const p = effectiveParams(params, wish);
   const bits: string[] = [];
-  if (wish?.found?.title) bits.push(`📖 „${wish.found.title}“ und Ähnliches`);
-  if (wish?.found?.author) bits.push(`✍️ ${wish.found.title ? 'mehr von ' : ''}${wish.found.author}`);
-  const genres = p.genres.map((id) => genreById(id)).filter(Boolean).map((g) => `${g!.emoji} ${g!.label}`);
+  if (wish?.found?.title) bits.push(`„${wish.found.title}“ und Ähnliches`);
+  if (wish?.found?.author) bits.push(`${wish.found.title ? 'mehr von ' : 'von '}${wish.found.author}`);
+  const genres = p.genres.map((id) => genreById(id)).filter(Boolean).map((g) => g!.label);
   if (genres.length) bits.push(genres.join(' oder '));
   const moods = p.moods.map((id) => moodById(id)?.label).filter(Boolean) as string[];
   if (moods.length) bits.push(moods.join(' & '));

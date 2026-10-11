@@ -21,7 +21,6 @@ export interface RecSection {
   id: string;
   title: string;
   subtitle?: string;
-  icon: string;
   items: ScoredBook[];
 }
 
@@ -53,10 +52,10 @@ export function scoreForProfile(book: Book, ctx: RecContext, extraReasons: Reaso
   const age = ageWeight(book);
   const score = tm.similarity + quality * 0.25 + german + Math.min(0.15, tm.authorBonus * 0.04) + famePrior(book) * 0.08 + age.adj * 0.12;
   const reasons: Reason[] = [...extraReasons];
-  if (tm.shared.length) reasons.push({ kind: 'taste', label: `💛 ${tm.shared.slice(0, 2).join(', ')}` });
-  if (german) reasons.push({ kind: 'german', label: '🇩🇪 auf Deutsch' });
+  if (tm.shared.length) reasons.push({ kind: 'taste', label: tm.shared.slice(0, 2).join(', ') });
+  if (german) reasons.push({ kind: 'german', label: 'auf Deutsch' });
   if ((bayesRating(book) ?? 0) >= 4.05 && (book.ratingsCount ?? 0) >= 5) reasons.push({ kind: 'rating', label: `★ ${book.rating!.toFixed(1)}` });
-  if (age.classic) reasons.push({ kind: 'fame', label: '📜 Klassiker' });
+  if (age.classic) reasons.push({ kind: 'fame', label: 'Klassiker' });
   const match = Math.round(clamp(45 + (tm.similarity / 0.35) * 45 + quality * 8, 5, 99));
   return { book, score, match, reasons };
 }
@@ -98,7 +97,6 @@ export async function becauseYouLiked(entry: LibraryEntry, ctx: RecContext): Pro
     id: `because-${entry.id}`,
     title: `Weil du „${entry.title.replace(/\s*\(.*?\)\s*/g, ' ').trim()}“ mochtest`,
     subtitle: `${'★'.repeat(entry.rating || 0)} · ${subjects.slice(0, 3).map(subjectLabel).join(', ')}`,
-    icon: '💛',
     items,
   };
 }
@@ -115,7 +113,7 @@ export async function topMatches(ctx: RecContext): Promise<RecSection | undefine
   );
   const items = rank(mergeBooks(lists), ctx, [], 24);
   if (!items.length) return undefined;
-  return { id: 'top', title: 'Deine Top-Treffer', subtitle: 'Ähnlichkeit zu deinem Geschmacksprofil × Bewertung', icon: '🎯', items };
+  return { id: 'top', title: 'Deine Top-Treffer', subtitle: 'Ähnlichkeit zu deinem Geschmacksprofil × Bewertung', items };
 }
 
 export async function favoriteAuthorsSection(ctx: RecContext): Promise<RecSection | undefined> {
@@ -126,13 +124,13 @@ export async function favoriteAuthorsSection(ctx: RecContext): Promise<RecSectio
     .flatMap((list, i) =>
       list
         .filter((b) => b.authors.some((x) => x.toLowerCase().includes(authors[i].name.split(' ').pop()!.toLowerCase())))
-        .map((b) => scoreForProfile(b, ctx, [{ kind: 'author', label: `✍️ ${authors[i].name}` }]))
+        .map((b) => scoreForProfile(b, ctx, [{ kind: 'author', label: 'Lieblingsautor:in' }]))
         .filter((x): x is ScoredBook => Boolean(x))
         .slice(0, 3),
     )
     .sort((a, b) => b.score - a.score);
   if (!items.length) return undefined;
-  return { id: 'authors', title: 'Mehr von deinen Lieblingsautor:innen', subtitle: authors.map((a) => a.name).slice(0, 5).join(' · '), icon: '✍️', items };
+  return { id: 'authors', title: 'Mehr von deinen Lieblingsautor:innen', subtitle: authors.map((a) => a.name).slice(0, 5).join(' · '), items };
 }
 
 export async function hiddenGems(ctx: RecContext): Promise<RecSection | undefined> {
@@ -143,9 +141,9 @@ export async function hiddenGems(ctx: RecContext): Promise<RecSection | undefine
     'rating',
     50,
   );
-  const items = rank(books, ctx, [{ kind: 'fame', label: '💎 Geheimtipp' }], 16).filter((s) => (bayesRating(s.book) ?? 0) >= 3.9);
+  const items = rank(books, ctx, [{ kind: 'fame', label: 'Geheimtipp' }], 16).filter((s) => (bayesRating(s.book) ?? 0) >= 3.9);
   if (items.length < 3) return undefined;
-  return { id: 'gems', title: 'Geheimtipps für dich', subtitle: 'Sehr gut bewertet, aber kaum bekannt', icon: '💎', items };
+  return { id: 'gems', title: 'Geheimtipps für dich', subtitle: 'Sehr gut bewertet, aber kaum bekannt', items };
 }
 
 /** Serendipität: verwandte Themen deines Lieblingsthemas, die in deinem Profil kaum vorkommen. */
@@ -164,7 +162,7 @@ export async function beyondTheEdge(ctx: RecContext): Promise<RecSection | undef
   const items = books
     .filter((b) => !ctx.readIndex.has(b))
     .map((b) => {
-      const s = scoreForProfile(b, ctx, [{ kind: 'similar', label: `🧭 Neuland: ${subjectLabel(fresh.find((f) => b.subjects.includes(f)) ?? fresh[0])}` }]);
+      const s = scoreForProfile(b, ctx, [{ kind: 'similar', label: `Neuland: ${subjectLabel(fresh.find((f) => b.subjects.includes(f)) ?? fresh[0])}` }]);
       if (s) s.score = (bayesRating(b) ?? 3.5) + Math.random() * 0.3;
       return s;
     })
@@ -172,7 +170,7 @@ export async function beyondTheEdge(ctx: RecContext): Promise<RecSection | undef
     .sort((a, b) => b.score - a.score)
     .slice(0, 14);
   if (items.length < 3) return undefined;
-  return { id: 'edge', title: 'Über den Tellerrand', subtitle: `Verwandt mit „${subjectLabel(seed)}“, aber neu für dich: ${fresh.map(subjectLabel).join(', ')}`, icon: '🧭', items };
+  return { id: 'edge', title: 'Über den Tellerrand', subtitle: `Verwandt mit „${subjectLabel(seed)}“, aber neu für dich: ${fresh.map(subjectLabel).join(', ')}`, items };
 }
 
 /** Die Lieblingsbücher, für die „Weil du X mochtest“-Reihen gebaut werden. */

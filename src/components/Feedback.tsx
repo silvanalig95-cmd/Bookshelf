@@ -22,10 +22,9 @@ export function Loading({ text = 'Bücher werden gesucht …' }: { text?: string
   );
 }
 
-export function Empty({ icon = '📚', title, children }: { icon?: string; title: string; children?: ReactNode }) {
+export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="empty">
-      <div className="big">{icon}</div>
       <h3>{title}</h3>
       {children}
     </div>

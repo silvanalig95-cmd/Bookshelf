@@ -46,7 +46,7 @@ export default function ForYou() {
           <p className="eyebrow">Für dich</p>
           <h1>Empfehlungen nach deinem Geschmack</h1>
         </div>
-        <Empty icon="💛" title="Erzähl mir, was du gerne liest">
+        <Empty title="Erzähl mir, was du gerne liest">
           <p>
             Für persönliche Empfehlungen braucht der Lesekompass ein paar Bücher, die du gelesen und bewertet hast – oder ein paar Runden Swipe.
             {entries.length > 0 && ' Deine Bibliothek wird gerade noch mit Themen angereichert.'}
@@ -56,7 +56,7 @@ export default function ForYou() {
               Goodreads verbinden
             </Link>
             <Link to="/swipe" className="btn">
-              🃏 Swipe starten
+              Swipe starten
             </Link>
           </div>
         </Empty>
@@ -97,7 +97,7 @@ export default function ForYou() {
           </div>
           <div className="btn-row">
             <Link to="/bibliothek?tab=dna" className="btn btn-sm">
-              🧬 Lese-DNA
+              Lese-DNA
             </Link>
             <button className="btn btn-sm btn-soft" onClick={() => setRound((r) => r + 1)} disabled={loading}>
               ↻ Neu mischen
@@ -107,7 +107,7 @@ export default function ForYou() {
       </div>
 
       {shown.map((s) => (
-        <BookRow key={s.id} title={s.title} subtitle={s.subtitle} icon={s.icon} items={s.items} origin="Für dich" />
+        <BookRow key={s.id} title={s.title} subtitle={s.subtitle} items={s.items} origin="Für dich" />
       ))}
       {loading && (
         <section className="shelf-row">
@@ -118,7 +118,7 @@ export default function ForYou() {
         </section>
       )}
       {!loading && !shown.length && (
-        <Empty icon="🤷" title="Gerade keine Empfehlungen gefunden">
+        <Empty title="Gerade keine Empfehlungen gefunden">
           <p>Open Library ist vielleicht überlastet. Versuch es gleich nochmal.</p>
           <button className="btn" onClick={() => setRound((r) => r + 1)}>
             Nochmal versuchen

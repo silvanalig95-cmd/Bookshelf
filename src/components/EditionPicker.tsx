@@ -34,9 +34,9 @@ export function EditionPicker({ editions, total, selectedKey, onSelect, language
   const otherCount = summary.total - summary.german - summary.english;
 
   const langOptions: Array<{ id: EditionLangFilter; label: string; count: number }> = [
-    { id: 'ger', label: '🇩🇪 Deutsch', count: summary.german },
-    { id: 'eng', label: '🇬🇧 Englisch', count: summary.english },
-    { id: 'other', label: '🌐 Andere', count: Math.max(0, otherCount) },
+    { id: 'ger', label: 'Deutsch', count: summary.german },
+    { id: 'eng', label: 'Englisch', count: summary.english },
+    { id: 'other', label: 'Andere', count: Math.max(0, otherCount) },
     { id: 'all', label: 'Alle', count: summary.total },
   ];
   const formats = (Object.keys(FORMAT_LABELS) as Array<keyof typeof FORMAT_LABELS>).filter((f) => summary.byFormat[f] > 0 && f !== 'other');

@@ -40,11 +40,11 @@ const STARTERS = [
   'Cooking',
 ];
 
-const KIND_STYLE: Record<NodeKind, { color: string; icon: string; label: string }> = {
-  subject: { color: 'var(--accent)', icon: '🏷️', label: 'Thema' },
-  place: { color: 'var(--teal)', icon: '📍', label: 'Ort' },
-  time: { color: 'var(--gold)', icon: '🕰️', label: 'Zeit' },
-  person: { color: 'var(--violet)', icon: '🎭', label: 'Figur' },
+const KIND_STYLE: Record<NodeKind, { color: string; label: string }> = {
+  subject: { color: 'var(--accent)', label: 'Thema' },
+  place: { color: 'var(--teal)', label: 'Ort' },
+  time: { color: 'var(--gold)', label: 'Zeit' },
+  person: { color: 'var(--violet)', label: 'Figur' },
 };
 
 function kindOf(key: string): NodeKind {
@@ -181,7 +181,7 @@ export default function Explore() {
                 <span className="spinner" /> Das Netz wird geknüpft …
               </div>
             ) : details.error ? (
-              <Empty icon="🕸️" title="Dieses Thema kennt Open Library nicht">
+              <Empty title="Dieses Thema kennt Open Library nicht">
                 <p>{errorMessage(details.error) || 'Probier einen englischen Begriff, z. B. „lighthouses“ statt „Leuchttürme“.'}</p>
               </Empty>
             ) : details.data ? (
@@ -203,7 +203,7 @@ export default function Explore() {
               <div className="chips mt-1">
                 {details.data.authors.slice(0, 10).map((a) => (
                   <Link key={a.key} to={`/entdecken?autor=${encodeURIComponent(a.name)}`} className="chip">
-                    ✍️ {a.name}
+                    {a.name}
                   </Link>
                 ))}
               </div>

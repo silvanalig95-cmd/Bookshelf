@@ -1,16 +1,8 @@
 import { useEffect, useState } from 'react';
 import { coverUrl } from '../lib/openLibrary';
 
-const PALETTE = [
-  ['#7c2d12', '#c2410c'],
-  ['#134e4a', '#0f766e'],
-  ['#3b0764', '#6d28d9'],
-  ['#831843', '#be185d'],
-  ['#1e3a8a', '#2563eb'],
-  ['#422006', '#a16207'],
-  ['#14532d', '#15803d'],
-  ['#3f3f46', '#71717a'],
-];
+// Gedämpfte Einfarbtöne für Bücher ohne Cover
+const PALETTE = ['#5b4a3f', '#3f5550', '#4a4458', '#5a4148', '#3e4a5c', '#5c5238', '#41513f', '#4a4a4a'];
 
 function hash(s: string): number {
   let h = 0;
@@ -36,7 +28,7 @@ export function Cover({ title, author, coverId, src, fallbacks = [], size = 'M',
   const [index, setIndex] = useState(0);
   useEffect(() => setIndex(0), [candidateKey]);
   const current = candidates[index];
-  const [a, b] = PALETTE[hash(title) % PALETTE.length];
+  const tone = PALETTE[hash(title) % PALETTE.length];
 
   return (
     <div className={`cover ${className ?? ''}`} style={style}>
@@ -54,7 +46,7 @@ export function Cover({ title, author, coverId, src, fallbacks = [], size = 'M',
           }}
         />
       ) : (
-        <div className="cover-fallback" style={{ background: `linear-gradient(150deg, ${a}, ${b})` }} aria-label={`Platzhalter-Cover: ${title}`}>
+        <div className="cover-fallback" style={{ background: tone }} aria-label={`Platzhalter-Cover: ${title}`}>
           <div>
             <div className="cf-title">{title}</div>
             <div className="cf-orn" />

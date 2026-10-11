@@ -79,7 +79,7 @@ describe('Konkrete Suche statt Geschmacks-Füllmaterial', () => {
     expect(plans[0].q).toContain('author_key:"OL22242A"');
     expect(plans.some((p) => p.q.trim() === 'language:ger')).toBe(false);
     expect(plans.some((p) => p.label === 'Dein Geschmack')).toBe(false);
-    expect(describeSearch(params, wish).slice(0, 2)).toEqual(['📖 „Aufzeichnungen aus dem Untergrund“ und Ähnliches', '✍️ mehr von Fyodor Dostoevsky']);
+    expect(describeSearch(params, wish).slice(0, 2)).toEqual(['„Aufzeichnungen aus dem Untergrund“ und Ähnliches', 'mehr von Fyodor Dostoevsky']);
   });
 
   it('bewertet Bücher der Autor:in hoch und Unpassendes schwach', () => {

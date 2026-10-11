@@ -26,7 +26,7 @@ const SHOPS: Record<Region, Array<{ id: string; label: string }>> = {
 };
 
 const PROVIDERS: Array<{ id: AiProvider; label: string }> = [
-  { id: 'gemini', label: '🆓 Google Gemini (gratis)' },
+  { id: 'gemini', label: 'Google Gemini (gratis)' },
   { id: 'claude', label: 'Claude (Anthropic)' },
 ];
 
@@ -79,10 +79,10 @@ export default function Settings() {
     try {
       const { aiRecommend } = await import('../lib/ai');
       const r = await aiRecommend('ein kurzer, heiterer Roman für einen Sonntag', config, 'Keine Angaben.', { count: 1 });
-      setTestState(`✅ ${providerName(config.provider)} funktioniert! Testvorschlag: „${r.recommendations[0]?.title}“ von ${r.recommendations[0]?.author}${r.note ? ` (${r.note})` : ''}`);
+      setTestState(`${providerName(config.provider)} funktioniert! Testvorschlag: „${r.recommendations[0]?.title}“ von ${r.recommendations[0]?.author}${r.note ? ` (${r.note})` : ''}`);
     } catch (err) {
       const { aiErrorMessage } = await import('../lib/ai');
-      setTestState(`❌ ${aiErrorMessage(err)}`);
+      setTestState(`Fehler: ${aiErrorMessage(err)}`);
     }
   };
 
@@ -99,7 +99,7 @@ export default function Settings() {
       </div>
 
       <section className="card">
-        <h3>🌍 Region, Shop & Sprache</h3>
+        <h3>Region, Shop & Sprache</h3>
         <div className="field">
           <span className="label">Wo bestellst du?</span>
           <div className="segmented">
@@ -109,7 +109,7 @@ export default function Settings() {
                 className={s.region === r ? 'on' : ''}
                 onClick={() => s.set({ region: r, preferredShop: SHOPS[r].some((x) => x.id === s.preferredShop) ? s.preferredShop : 'amazon-de' })}
               >
-                {r === 'CH' ? '🇨🇭 Schweiz' : r === 'DE' ? '🇩🇪 Deutschland' : '🇦🇹 Österreich'}
+                {r === 'CH' ? 'Schweiz' : r === 'DE' ? 'Deutschland' : 'Österreich'}
               </button>
             ))}
           </div>
@@ -146,9 +146,9 @@ export default function Settings() {
           <div className="segmented">
             {(
               [
-                ['auto', '🌗 Automatisch'],
-                ['light', '☀️ Hell'],
-                ['dark', '🌙 Dunkel'],
+                ['auto', 'Automatisch'],
+                ['light', 'Hell'],
+                ['dark', 'Dunkel'],
               ] as Array<[Theme, string]>
             ).map(([id, label]) => (
               <button key={id} className={s.theme === id ? 'on' : ''} onClick={() => s.set({ theme: id })}>
@@ -162,7 +162,7 @@ export default function Settings() {
       <SyncCard />
 
       <section className="card">
-        <h3>🗄️ Anna’s Archive</h3>
+        <h3>Anna’s Archive</h3>
         <p className="small">
           Die Adresse von Anna’s Archive wechselt immer wieder. Falls die Links nicht mehr gehen, wähle hier einen anderen Spiegel oder trage die aktuelle
           Adresse ein.
@@ -207,7 +207,7 @@ export default function Settings() {
       </section>
 
       <section className="card" id="ki">
-        <h3>✨ KI-Empfehlungen (optional)</h3>
+        <h3>KI-Empfehlungen (optional)</h3>
         <p className="small">
           Für „KI fragen“ in der Suche und den KI-Bibliothekar. Die KI versteht Wünsche wie „wie X, aber düsterer und in Island“ und kennt deine gelesenen
           Bücher.
@@ -223,7 +223,6 @@ export default function Settings() {
           </div>
         </div>
         <div className={`notice ${ai.available ? 'teal' : ''}`} style={{ marginBottom: 14 }}>
-          <span className="notice-icon">{ai.available ? '✅' : 'ℹ️'}</span>
           <span className="small">{aiStatusText}</span>
         </div>
 
@@ -332,7 +331,7 @@ export default function Settings() {
       </section>
 
       <section className="card">
-        <h3>📗 Google Books (optional)</h3>
+        <h3>Google Books (optional)</h3>
         <p className="small">
           Ergänzt deutsche Klappentexte, Live-E-Book-Preise von Google Play und Titel, die Open Library nicht kennt. Ohne eigenen Schlüssel ist das geteilte
           Gratis-Kontingent praktisch immer aufgebraucht – mit einem kostenlosen Schlüssel klappt es zuverlässig:{' '}
@@ -348,18 +347,18 @@ export default function Settings() {
       </section>
 
       <section className="card">
-        <h3>🔌 Lokaler Server</h3>
+        <h3>Lokaler Server</h3>
         <p className="small mb-0">
           {server === undefined
             ? 'Prüfe …'
             : server.goodreads
-              ? `✅ Läuft – Goodreads-Profil-Import ist verfügbar${server.gemini ? ', ebenso der Gemini-Schlüssel des Servers' : ''}${server.ai ? ', der Claude-Schlüssel des Servers' : ''}${server.sync ? ' und der Geräte-Abgleich' : ''}. Version ${__VERSION__}, Build ${__BUILD__.slice(0, 7)}.`
+              ? `Läuft – Goodreads-Profil-Import ist verfügbar${server.gemini ? ', ebenso der Gemini-Schlüssel des Servers' : ''}${server.ai ? ', der Claude-Schlüssel des Servers' : ''}${server.sync ? ' und der Geräte-Abgleich' : ''}. Version ${__VERSION__}, Build ${__BUILD__.slice(0, 7)}.`
               : 'Nicht erreichbar (statische Installation). Goodreads geht dann per CSV-Export, Claude per Browser-Schlüssel.'}
         </p>
       </section>
 
       <section className="card">
-        <h3>📚 Datenquellen</h3>
+        <h3>Datenquellen</h3>
         <ul className="small" style={{ paddingLeft: 18, margin: 0 }}>
           <li>
             <b>Open Library</b> (Internet Archive): Suche, Werke, alle Ausgaben, Cover, Themen – frei und ohne Anmeldung.
@@ -405,7 +404,7 @@ function SyncCard() {
   if (sync.phase === 'unavailable') {
     return (
       <section className="card" id="abgleich">
-        <h3>☁️ Geräte abgleichen</h3>
+        <h3>Geräte abgleichen</h3>
         <p className="small mb-0">
           Auf dieser Installation nicht verfügbar – Bibliothek und Merkliste bleiben in diesem Browser. Mit dem Docker-Server (siehe <code>deploy/DOCKER.md</code>)
           haben alle deine Geräte automatisch denselben Stand.
@@ -425,10 +424,9 @@ function SyncCard() {
   const c = sync.counts;
   const status =
     sync.phase === 'off'
-      ? { icon: '⏸️', tone: '', text: <>Auf diesem Gerät ausgeschaltet. Änderungen bleiben hier und werden beim Einschalten nachgereicht.</> }
+      ? { tone: '', text: <>Auf diesem Gerät ausgeschaltet. Änderungen bleiben hier und werden beim Einschalten nachgereicht.</> }
       : sync.phase === 'offline'
         ? {
-            icon: '📴',
             tone: 'rose',
             text: (
               <>
@@ -438,9 +436,8 @@ function SyncCard() {
             ),
           }
         : sync.phase === 'error'
-          ? { icon: '⚠️', tone: 'rose', text: <>Abgleich gestört: {sync.error}</> }
+          ? { tone: 'rose', text: <>Abgleich gestört: {sync.error}</> }
           : {
-              icon: sync.phase === 'syncing' ? '⏳' : '✅',
               tone: 'teal',
               text: (
                 <>
@@ -452,13 +449,12 @@ function SyncCard() {
 
   return (
     <section className="card" id="abgleich">
-      <h3>☁️ Geräte abgleichen</h3>
+      <h3>Geräte abgleichen</h3>
       <p className="small">
         Bibliothek, Bewertungen, Merkliste, Swipe-Geschmack und die Einstellungen oben sind auf allen Geräten gleich, die diesen Lesekompass öffnen – auf dem
         Handy gemerkt, am PC gefunden. Änderungen gehen sofort raus; offline Gemachtes wird nachgereicht.
       </p>
       <div className={`notice ${status.tone}`} style={{ marginBottom: 12 }}>
-        <span className="notice-icon">{status.icon}</span>
         <span className="small">{status.text}</span>
       </div>
       {c && on && (

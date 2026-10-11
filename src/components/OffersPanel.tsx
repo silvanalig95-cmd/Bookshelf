@@ -45,7 +45,7 @@ export function OffersPanel({ title, author, edition, workId, ebookPrice, priceL
     <div className="stack">
       <div className="row wrap" style={{ gap: 8 }}>
         {edition?.isbn13 ? (
-          <span className="tag teal">🎯 ISBN-genau: {edition.isbn13}</span>
+          <span className="tag teal">ISBN-genau: {edition.isbn13}</span>
         ) : (
           <span className="tag gold">Ohne ISBN – Suche über Titel & Autor</span>
         )}
@@ -70,7 +70,6 @@ export function OffersPanel({ title, author, edition, workId, ebookPrice, priceL
 
       {(ebookPrice || priceLoading) && (
         <div className="notice teal">
-          <span className="notice-icon">📱</span>
           <div style={{ flex: 1 }}>
             {priceLoading ? (
               <span className="muted">Live-Preis wird abgefragt …</span>
@@ -100,7 +99,7 @@ export function OffersPanel({ title, author, edition, workId, ebookPrice, priceL
           .map((g) => (
             <div key={g.kind} className="offer-group">
               <h4>
-                {g.icon} {g.title}
+                {g.title}
               </h4>
               {g.links
                 .filter((l) => !l.featured)
@@ -118,7 +117,7 @@ export function OffersPanel({ title, author, edition, workId, ebookPrice, priceL
             </div>
           ))}
       </div>
-      <p className="small muted">💡 {priceHint(region, language)}</p>
+      <p className="small muted">{priceHint(region, language)}</p>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookRow } from '../components/BookCard';
 import { SkeletonGrid } from '../components/Feedback';
+import { Icon } from '../components/Icon';
 import { useAsync, useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { docToBook, searchWorks } from '../lib/openLibrary';
 import { isProfileUsable } from '../lib/profile';
@@ -23,14 +24,14 @@ const EXAMPLES = [
 ];
 
 const MODES = [
-  { to: '/entdecken', icon: '🔎', title: 'Ausführliche Suche', text: 'Genres, Stimmungen, Orte, Epochen, Tempo, Länge – und dein Wunsch in eigenen Worten.', color: 'var(--accent-soft)' },
-  { to: '/fuer-dich', icon: '💛', title: 'Für dich', text: 'Algorithmische Empfehlungen aus deinen gelesenen Büchern und Bewertungen.', color: 'var(--gold-soft)' },
-  { to: '/swipe', icon: '🃏', title: 'Bücher-Swipe', text: 'Wisch dich durch Bücher – der Stapel lernt mit jedem Wisch deinen Geschmack.', color: 'var(--rose-soft)' },
-  { to: '/gluecksrad', icon: '🎡', title: 'Glücksrad & Blind Date', text: 'Dreh am Rad und lerne Bücher erst über ihren ersten Satz kennen.', color: 'var(--violet-soft)' },
-  { to: '/orakel', icon: '🔮', title: 'Lese-Orakel', text: 'Sieben verspielte Fragen – und das Orakel weiss, was du heute lesen willst.', color: 'var(--teal-soft)' },
-  { to: '/themen', icon: '🕸️', title: 'Themen-Netz', text: 'Von Thema zu Thema springen und im Kaninchenbau neue Welten finden.', color: 'var(--gold-soft)' },
-  { to: '/bibliothekar', icon: '✨', title: 'KI-Bibliothekar', text: 'Erzähl, worauf du Lust hast – Claude kennt deine Bücher und empfiehlt passend.', color: 'var(--violet-soft)' },
-  { to: '/bibliothek', icon: '📚', title: 'Bibliothek & Lese-DNA', text: 'Goodreads verbinden, Merkliste pflegen und deine Lesestatistik entdecken.', color: 'var(--teal-soft)' },
+  { to: '/entdecken', title: 'Ausführliche Suche', text: 'Genres, Stimmungen, Orte, Epochen, Länge und Wunsch kombinieren.' },
+  { to: '/fuer-dich', title: 'Für dich', text: 'Empfehlungen aus deinen gelesenen Büchern und Bewertungen.' },
+  { to: '/bibliothekar', title: 'KI-Bibliothekar', text: 'Erzähl, worauf du Lust hast – die KI kennt deine Bücher.' },
+  { to: '/bibliothek', title: 'Bibliothek & Lese-DNA', text: 'Goodreads verbinden, Merkliste und Lesestatistik.' },
+  { to: '/swipe', title: 'Bücher-Swipe', text: 'Wischen – der Stapel lernt deinen Geschmack.' },
+  { to: '/gluecksrad', title: 'Glücksrad & Blind Date', text: 'Bücher erst über ihren ersten Satz kennenlernen.' },
+  { to: '/orakel', title: 'Lese-Orakel', text: 'Sieben Fragen zur heutigen Lesestimmung.' },
+  { to: '/themen', title: 'Themen-Netz', text: 'Von Thema zu Thema neue Welten finden.' },
 ];
 
 function useRotatingPlaceholder(): string {
@@ -89,18 +90,10 @@ export default function Home() {
   return (
     <div>
       <section className="hero">
-        <p className="eyebrow">Dein Kompass durch die Bücherwelt</p>
-        <h1>
-          Finde dein nächstes <em>Lieblingsbuch</em>.
-        </h1>
-        <p className="lead">
-          Beschreib in eigenen Worten, worauf du Lust hast – oder spiel mit Stimmungen, Orten und Epochen. Deutsche Ausgaben zuerst, alle Angebote auf einen
-          Blick.
-        </p>
+        <h1>Finde dein nächstes Lieblingsbuch.</h1>
+        <p className="lead">Titel, Autor:in oder einfach in eigenen Worten, worauf du Lust hast. Deutsche Ausgaben zuerst.</p>
         <form className="big-search" onSubmit={submit} role="search">
-          <span aria-hidden="true" style={{ fontSize: '1.2rem' }}>
-            🔎
-          </span>
+          <Icon name="search" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -112,21 +105,20 @@ export default function Home() {
           </button>
         </form>
         <div className="chips quick-moods">
-          {MOODS.slice(0, 9).map((m) => (
+          {MOODS.slice(0, 7).map((m) => (
             <Link key={m.id} to={`/entdecken?m=${m.id}`} className="chip" title={m.hint}>
-              {m.emoji} {m.label}
+              {m.label}
             </Link>
           ))}
           <Link to="/gluecksrad" className="chip">
-            🎲 Überrasch mich
+            Überrasch mich
           </Link>
         </div>
       </section>
 
       <div className="mode-grid">
         {MODES.map((m) => (
-          <Link key={m.to} to={m.to} className="mode-tile" style={{ '--tile-color': m.color } as React.CSSProperties}>
-            <span className="mt-icon">{m.icon}</span>
+          <Link key={m.to} to={m.to} className="mode-tile">
             <h3>{m.title}</h3>
             <p>{m.text}</p>
           </Link>
@@ -136,13 +128,12 @@ export default function Home() {
       {usable ? (
         forYou.loading ? (
           <section className="shelf-row">
-            <h2>💛 Heute für dich</h2>
+            <h2>Heute für dich</h2>
             <SkeletonGrid count={6} compact />
           </section>
         ) : forYou.data?.length ? (
           <BookRow
             title="Heute für dich"
-            icon="💛"
             subtitle="Passend zu deinem Geschmacksprofil – mehr unter „Für dich“."
             items={forYou.data}
             origin="Startseite"
@@ -154,8 +145,7 @@ export default function Home() {
           />
         ) : null
       ) : (
-        <div className="notice teal mt-2">
-          <span className="notice-icon">📚</span>
+        <div className="notice mt-2">
           <div>
             <b>{entries.length ? 'Noch etwas mehr Futter für deinen Geschmack' : 'Persönliche Empfehlungen freischalten'}</b>
             <div className="small">
@@ -178,7 +168,6 @@ export default function Home() {
       {wishItems.length > 0 && (
         <BookRow
           title="Deine Merkliste"
-          icon="♥"
           items={wishItems}
           action={
             <Link to="/bibliothek?tab=merkliste" className="btn btn-sm">
@@ -190,11 +179,11 @@ export default function Home() {
 
       {popular.loading ? (
         <section className="shelf-row">
-          <h2>🔥 Gerade gefragt – auf Deutsch</h2>
+          <h2>Gerade gefragt – auf Deutsch</h2>
           <SkeletonGrid count={6} compact />
         </section>
       ) : popular.data?.length ? (
-        <BookRow title="Gerade gefragt – auf Deutsch" icon="🔥" subtitle="Was Leser:innen auf Open Library diese Tage auf ihre Listen setzen." items={popular.data} origin="Startseite" />
+        <BookRow title="Gerade gefragt – auf Deutsch" subtitle="Was Leser:innen auf Open Library diese Tage auf ihre Listen setzen." items={popular.data} origin="Startseite" />
       ) : null}
     </div>
   );

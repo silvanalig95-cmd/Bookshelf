@@ -23,10 +23,10 @@ import { useWishlist } from '../store/wishlist';
 type Tab = 'gelesen' | 'wunsch' | 'merkliste' | 'dna' | 'import';
 
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'gelesen', label: '📖 Gelesen' },
-  { id: 'wunsch', label: '🗓️ Will ich lesen' },
-  { id: 'merkliste', label: '♥ Merkliste' },
-  { id: 'dna', label: '🧬 Lese-DNA' },
+  { id: 'gelesen', label: 'Gelesen' },
+  { id: 'wunsch', label: 'Will ich lesen' },
+  { id: 'merkliste', label: 'Merkliste' },
+  { id: 'dna', label: 'Lese-DNA' },
   { id: 'import', label: '⇅ Goodreads & Daten' },
 ];
 
@@ -50,12 +50,11 @@ export default function Library() {
       <div className="page-head">
         <p className="eyebrow">Bibliothek</p>
         <h1>Deine Bücher</h1>
-        <p>Alles, was du gelesen hast, lesen willst und dir gemerkt hast – die Grundlage für persönliche Empfehlungen. Alle Daten bleiben in diesem Browser.</p>
+        <p>Alles, was du gelesen hast, lesen willst und dir gemerkt hast – die Grundlage für persönliche Empfehlungen. Die Daten bleiben bei dir – im Browser und, falls eingerichtet, auf deinem eigenen Server.</p>
       </div>
 
       {(enrichment.running || (pending > 0 && entries.length > 0)) && (
         <div className="notice teal" style={{ marginBottom: 18 }}>
-          <span className="notice-icon">🧩</span>
           <div style={{ flex: 1 }}>
             {enrichment.running ? (
               <>
@@ -125,7 +124,7 @@ function EntryList({ shelves }: { shelves: Shelf[] }) {
 
   if (!entries.some((e) => shelves.includes(e.shelf))) {
     return (
-      <Empty icon={shelves.includes('read') ? '📖' : '🗓️'} title={shelves.includes('read') ? 'Noch keine gelesenen Bücher' : 'Deine Will-ich-lesen-Liste ist leer'}>
+      <Empty title={shelves.includes('read') ? 'Noch keine gelesenen Bücher' : 'Deine Will-ich-lesen-Liste ist leer'}>
         <p>Verbinde Goodreads oder füge Bücher manuell hinzu.</p>
         <Link to="/bibliothek?tab=import" className="btn btn-primary">
           Bücher importieren
@@ -161,7 +160,7 @@ function EntryList({ shelves }: { shelves: Shelf[] }) {
                 {e.pages ? ` · ${e.pages} S.` : ''}
               </div>
               <div className="row wrap" style={{ gap: 4, marginTop: 4 }}>
-                {e.matchState === 'unmatched' && <span className="tag gold" title="Kein Open-Library-Werk gefunden – zählt nur eingeschränkt für Empfehlungen">⚠ ohne Themen</span>}
+                {e.matchState === 'unmatched' && <span className="tag gold" title="Kein Open-Library-Werk gefunden – zählt nur eingeschränkt für Empfehlungen">ohne Themen</span>}
                 {(e.tags ?? []).slice(0, 4).map((t) => (
                   <span key={t} className="tag">
                     {t}
@@ -179,8 +178,9 @@ function EntryList({ shelves }: { shelves: Shelf[] }) {
                   remove(e.id);
                   toast('Entfernt');
                 }}
+                aria-label="Entfernen"
               >
-                🗑
+                ✕
               </button>
             </div>
           </div>
@@ -205,7 +205,7 @@ function Wishlist() {
   const list = useMemo(() => Object.values(items).sort((a, b) => b.addedAt.localeCompare(a.addedAt)), [items]);
   if (!list.length) {
     return (
-      <Empty icon="♡" title="Deine Merkliste ist leer">
+      <Empty title="Deine Merkliste ist leer">
         <p>Tippe auf ♡ bei einem Buch, um es dir zu merken – beim Entdecken, Swipen oder am Glücksrad.</p>
         <Link to="/swipe" className="btn btn-primary">
           Swipe starten
@@ -228,7 +228,7 @@ function Wishlist() {
         <span className="muted small">{list.length} gemerkte Bücher</span>
         <span className="spacer" />
         <button className="btn btn-sm" onClick={copy}>
-          📋 Als Liste kopieren
+          Als Liste kopieren
         </button>
         <button
           className="btn btn-sm btn-ghost"
@@ -253,7 +253,7 @@ function ReadingDna() {
   const persona = useMemo(() => readingPersona(stats), [stats]);
   if (!stats.read) {
     return (
-      <Empty icon="🧬" title="Noch keine Lese-DNA">
+      <Empty title="Noch keine Lese-DNA">
         <p>Sobald deine gelesenen Bücher importiert sind, siehst du hier, wie du liest.</p>
         <Link to="/bibliothek?tab=import" className="btn btn-primary">
           Goodreads verbinden
@@ -338,7 +338,7 @@ function ReadingDna() {
             <div className="chips">
               {stats.places.map((p) => (
                 <span key={p.name} className="tag teal">
-                  📍 {p.name} · {p.count}
+                  {p.name} · {p.count}
                 </span>
               ))}
             </div>
@@ -500,7 +500,7 @@ function ImportPanel() {
     <div className="grid-2" style={{ alignItems: 'start' }}>
       <div className="card">
         <div className="card-title">
-          <h3>🔗 Goodreads-Profil verbinden</h3>
+          <h3>Goodreads-Profil verbinden</h3>
         </div>
         <p className="small">
           Lädt deine Regale direkt aus deinem <b>öffentlichen</b> Goodreads-Profil – inklusive Bewertungen, Lesedaten und Klappentexten. Erneut ausführen
@@ -508,7 +508,6 @@ function ImportPanel() {
         </p>
         {server === false && (
           <div className="notice" style={{ marginBottom: 12 }}>
-            <span className="notice-icon">ℹ️</span>
             <span className="small">
               Das direkte Verbinden braucht den lokalen Lesekompass-Server (<code>npm start</code>), weil Goodreads keinen Browser-Zugriff erlaubt. Auf dieser
               Installation klappt der CSV-Export rechts.
@@ -553,7 +552,7 @@ function ImportPanel() {
 
       <div className="card">
         <div className="card-title">
-          <h3>📄 CSV-Export hochladen</h3>
+          <h3>CSV-Export hochladen</h3>
         </div>
         <ol className="small" style={{ paddingLeft: 18, marginTop: 0 }}>
           <li>
@@ -591,7 +590,6 @@ function ImportPanel() {
             transition: 'all .15s',
           }}
         >
-          <div style={{ fontSize: '2rem' }}>📥</div>
           <b>CSV hierher ziehen</b>
           <div className="small muted">oder klicken zum Auswählen</div>
         </div>
@@ -611,7 +609,7 @@ function ImportPanel() {
 
       <div className="card">
         <div className="card-title">
-          <h3>➕ Buch von Hand hinzufügen</h3>
+          <h3>Buch von Hand hinzufügen</h3>
         </div>
         <p className="small">Für Bücher, die nicht auf Goodreads stehen. Suche das Buch und bewerte es.</p>
         <BookSearchBox placeholder="Titel oder Autor:in …" onPick={(b) => openRating(b)} />
@@ -619,7 +617,7 @@ function ImportPanel() {
 
       <div className="card">
         <div className="card-title">
-          <h3>💾 Sicherung</h3>
+          <h3>Sicherung</h3>
         </div>
         <p className="small">
           {synced
@@ -629,10 +627,10 @@ function ImportPanel() {
         </p>
         <div className="btn-row">
           <button className="btn" onClick={exportBackup}>
-            ⬇️ Sicherung herunterladen
+            Sicherung herunterladen
           </button>
           <button className="btn" onClick={() => backupRef.current?.click()}>
-            ⬆️ Wiederherstellen
+            Wiederherstellen
           </button>
           <input ref={backupRef} type="file" accept="application/json,.json" hidden onChange={(e) => e.target.files?.[0] && importBackup(e.target.files[0])} />
         </div>

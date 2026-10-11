@@ -23,7 +23,6 @@ export interface OfferLink {
 export interface OfferGroup {
   kind: OfferKind;
   title: string;
-  icon: string;
   links: OfferLink[];
 }
 
@@ -167,13 +166,13 @@ export function buildOffers(input: OfferInput): OfferGroup[] {
   }
 
   return [
-    { kind: 'new', title: 'Neu kaufen', icon: '🛒', links: newShops },
-    { kind: 'compare', title: 'Preisvergleich', icon: '🏷️', links: compare },
-    { kind: 'used', title: 'Gebraucht', icon: '♻️', links: used },
-    { kind: 'ebook', title: 'E-Book & Hörbuch', icon: '📱', links: ebook },
-    { kind: 'library', title: 'Ausleihen', icon: '🏛️', links: library },
-    { kind: 'archive', title: 'Archiv', icon: '🗄️', links: archive },
-    { kind: 'info', title: 'Mehr Infos', icon: 'ℹ️', links: info },
+    { kind: 'new', title: 'Neu kaufen', links: newShops },
+    { kind: 'compare', title: 'Preisvergleich', links: compare },
+    { kind: 'used', title: 'Gebraucht', links: used },
+    { kind: 'ebook', title: 'E-Book & Hörbuch', links: ebook },
+    { kind: 'library', title: 'Ausleihen', links: library },
+    { kind: 'archive', title: 'Archiv', links: archive },
+    { kind: 'info', title: 'Mehr Infos', links: info },
   ];
 }
 

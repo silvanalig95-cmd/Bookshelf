@@ -36,7 +36,7 @@ export function UpdateBanner() {
   if (!next) return null;
   return (
     <div className="update-banner" role="status">
-      <span>✨ Eine neue Version des Lesekompass ist bereit.</span>
+      <span>Eine neue Version des Lesekompass ist bereit.</span>
       <button className="btn btn-sm btn-primary" onClick={() => window.location.reload()}>
         Neu laden
       </button>
@@ -49,11 +49,11 @@ function SyncBadge() {
   const pending = useSync((s) => s.pending);
   const label =
     phase === 'ok' || phase === 'syncing'
-      ? '☁️ Geräte abgeglichen'
+      ? 'Geräte abgeglichen'
       : phase === 'offline'
-        ? `📴 Server nicht erreichbar${pending ? ` – ${pending} Änderung${pending === 1 ? '' : 'en'} warten` : ''}`
+        ? `Server nicht erreichbar${pending ? ` – ${pending} Änderung${pending === 1 ? '' : 'en'} warten` : ''}`
         : phase === 'error'
-          ? '⚠️ Abgleich gestört'
+          ? 'Abgleich gestört'
           : undefined;
   if (!label) return null;
   return (

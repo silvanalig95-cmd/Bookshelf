@@ -106,6 +106,6 @@ describe('Zusammenführen & Beschreiben', () => {
 
   it('fasst die Suche lesbar zusammen', () => {
     const bits = describeSearch(params({ genres: ['krimi'], moods: ['duester'], places: ['skandinavien'], pagesMax: 300 }));
-    expect(bits).toEqual(expect.arrayContaining(['🕵️ Krimi', 'düster', 'spielt in Skandinavien', 'unter 300 Seiten']));
+    expect(bits).toEqual(expect.arrayContaining(['Krimi', 'düster', 'spielt in Skandinavien', 'unter 300 Seiten']));
   });
 });

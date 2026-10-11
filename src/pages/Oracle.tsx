@@ -201,7 +201,7 @@ export default function Oracle() {
         <div className="stack" style={{ gap: 20 }}>
           <div className="card center" style={{ background: 'linear-gradient(135deg, var(--violet-soft), var(--rose-soft))', borderColor: 'transparent' }}>
             <p className="eyebrow">Das Orakel hat gesprochen</p>
-            <h2>🔮 {persona}</h2>
+            <h2>{persona}</h2>
             <div className="chips" style={{ justifyContent: 'center' }}>
               {describeSearch(params).map((d) => (
                 <span key={d} className="tag accent">

@@ -24,11 +24,11 @@ interface Segment {
 }
 
 const KINDS: Array<{ id: WheelKind; label: string }> = [
-  { id: 'genre', label: '🎭 Genres' },
-  { id: 'mood', label: '🌈 Stimmungen' },
-  { id: 'place', label: '📍 Schauplätze' },
-  { id: 'era', label: '🕰️ Epochen' },
-  { id: 'mine', label: '💛 Meine Themen' },
+  { id: 'genre', label: 'Genres' },
+  { id: 'mood', label: 'Stimmungen' },
+  { id: 'place', label: 'Schauplätze' },
+  { id: 'era', label: 'Epochen' },
+  { id: 'mine', label: 'Meine Themen' },
 ];
 
 const COLORS = ['#c2410c', '#0f766e', '#b7791f', '#6d28d9', '#be185d', '#1d4ed8', '#4d7c0f', '#9a3412', '#0e7490', '#7e22ce'];
@@ -48,7 +48,7 @@ function segmentsFor(kind: WheelKind, mine: string[]): Segment[] {
     case 'mine':
       return shuffle(mine)
         .slice(0, 10)
-        .map((s, i) => ({ id: `mine-${i}`, label: s.length > 22 ? `${s.slice(0, 20)}…` : s, emoji: '💛', clause: or('subject', [s]) }));
+        .map((s, i) => ({ id: `mine-${i}`, label: s.length > 22 ? `${s.slice(0, 20)}…` : s, emoji: '', clause: or('subject', [s]) }));
   }
 }
 
@@ -146,7 +146,7 @@ export default function Wheel() {
           ))}
         </div>
         <button className="btn btn-sm btn-ghost" onClick={() => setSeed((x) => x + 1)} disabled={spinning || kind === 'era'}>
-          🔀 Andere Felder
+          Andere Felder
         </button>
       </div>
 
@@ -183,16 +183,13 @@ export default function Wheel() {
         <div>
           {!winner && !spinning && (
             <div className="card center">
-              <div style={{ fontSize: '3rem' }}>🎡</div>
               <h3>Bereit?</h3>
               <p className="muted">Drück auf „Drehen“ – das Rad entscheidet, wohin die Reise geht.</p>
             </div>
           )}
           {spinning && (
             <div className="card center">
-              <div style={{ fontSize: '3rem' }} className="spin-emoji">
-                🌀
-              </div>
+              <span className="spinner" />
               <h3>Das Rad dreht sich …</h3>
             </div>
           )}
@@ -217,9 +214,9 @@ export default function Wheel() {
                           <div className="bd-ribbon">Blind Date #{i + 1}</div>
                           {b.firstSentence ? <blockquote className="bd-quote">„{b.firstSentence.length > 260 ? `${b.firstSentence.slice(0, 258)}…` : b.firstSentence}“</blockquote> : <p className="muted">Kein erster Satz bekannt – nur Hinweise:</p>}
                           <div className="chips">
-                            {b.year && <span className="tag">📅 {Math.floor(b.year / 10) * 10}er</span>}
-                            {b.pages && <span className="tag">📏 ~{Math.round(b.pages / 50) * 50} S.</span>}
-                            {b.places?.[0] && <span className="tag teal">📍 {b.places[0]}</span>}
+                            {b.year && <span className="tag">{Math.floor(b.year / 10) * 10}er</span>}
+                            {b.pages && <span className="tag">~{Math.round(b.pages / 50) * 50} S.</span>}
+                            {b.places?.[0] && <span className="tag teal">{b.places[0]}</span>}
                             {hints.map((h) => (
                               <span key={h} className="tag gold">
                                 {h}
@@ -227,7 +224,7 @@ export default function Wheel() {
                             ))}
                           </div>
                           <button className="btn btn-dark mt-2" onClick={() => reveal(b)}>
-                            🎁 Auspacken
+                            Auspacken
                           </button>
                         </div>
                       ) : (
@@ -268,10 +265,10 @@ export default function Wheel() {
               {!loading && dates.length > 0 && (
                 <div className="btn-row">
                   <button className="btn" onClick={() => winner && loadDates(winner)}>
-                    🔁 Drei neue Dates in „{winner.label}“
+                    Drei neue Dates in „{winner.label}“
                   </button>
                   <button className="btn btn-ghost" onClick={spin}>
-                    🎡 Nochmal drehen
+                    Nochmal drehen
                   </button>
                 </div>
               )}

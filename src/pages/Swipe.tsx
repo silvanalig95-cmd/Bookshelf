@@ -228,7 +228,7 @@ export default function Swipe() {
 
         <aside className="stack">
           <div className="card">
-            <h3>🧠 Was ich gelernt habe</h3>
+            <h3>Was ich gelernt habe</h3>
             {learned.length ? (
               <div className="bar-list">
                 {learned.map((c) => (
@@ -288,7 +288,7 @@ function SwipeCardContent({ book, preview = false }: { book: Book; preview?: boo
       <Cover title={book.title} author={book.authors[0]} coverId={book.coverId} src={book.coverUrl} size="L" fallbacks={isbn ? [isbnCoverUrl(isbn, 'L')] : []} className="swipe-cover" />
       <div className="swipe-info">
         <div className="row wrap" style={{ gap: 6 }}>
-          {hasGerman(book) && <span className="tag teal">🇩🇪 auf Deutsch</span>}
+          {hasGerman(book) && <span className="tag teal">auf Deutsch</span>}
           {book.year && <span className="tag">{book.year}</span>}
           {book.pages && <span className="tag">{book.pages} S.</span>}
         </div>

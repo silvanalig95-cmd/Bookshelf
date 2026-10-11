@@ -201,13 +201,13 @@ export default function Librarian() {
     if (b) {
       return (
         <Link to={bookPath(b)} className="book-ref" onClick={() => rememberBook(b)}>
-          📖 {title}
+          {title}
         </Link>
       );
     }
     return (
       <Link to={`/entdecken?q=${encodeURIComponent(`${title} ${author}`)}`} className="book-ref">
-        📖 {title}
+        {title}
       </Link>
     );
   };
@@ -231,7 +231,7 @@ export default function Librarian() {
             Frage.
           </p>
           <Link to="/einstellungen#ki" className="btn btn-primary">
-            ✨ KI in den Einstellungen aktivieren
+            KI in den Einstellungen aktivieren
           </Link>
         </div>
       </div>
@@ -275,7 +275,6 @@ export default function Librarian() {
       <div className="chat">
         {turns.length === 0 && (
           <div className="chat-empty">
-            <div style={{ fontSize: '2.6rem' }}>✨</div>
             <p>Erzähl mir, wonach dir ist – Stimmung, Ort, ein Buch, das du geliebt hast, oder was du gerade gar nicht willst.</p>
             <div className="chips" style={{ justifyContent: 'center' }}>
               {SUGGESTIONS.map((s) => (
@@ -289,13 +288,13 @@ export default function Librarian() {
         {turns.map((t, i) => (
           <div key={i} className={`bubble ${t.role}`}>
             {t.role === 'assistant' ? <Markdown text={t.text} onBook={bookChip} /> : <p>{t.text}</p>}
-            {t.note && <p className="tiny muted mb-0">ℹ️ {t.note}</p>}
+            {t.note && <p className="tiny muted mb-0">{t.note}</p>}
           </div>
         ))}
         {busy && (
           <div className="bubble assistant">
             {streaming ? (
-              <Markdown text={streaming} onBook={(title) => <span className="book-ref">📖 {title}</span>} />
+              <Markdown text={streaming} onBook={(title) => <span className="book-ref">{title}</span>} />
             ) : (
               <p className="muted">
                 <span className="spinner" style={{ width: 16, height: 16, verticalAlign: 'middle' }} /> {aiName} blättert in deinen Regalen …
@@ -305,7 +304,6 @@ export default function Librarian() {
         )}
         {error && (
           <div className="notice rose">
-            <span className="notice-icon">⚠️</span>
             <span>{error}</span>
           </div>
         )}

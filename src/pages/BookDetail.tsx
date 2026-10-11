@@ -13,7 +13,7 @@ import { errorMessage, useAsync, useLibraryEntries, useProfile, useReadIndex } f
 import { settle } from '../lib/http';
 import { docToBook, getBookByWorkId, getEditions, getWork, isbnCoverUrl, searchWorks, workForIsbn, type WorkDetails } from '../lib/openLibrary';
 import { scoreForProfile } from '../lib/recommend';
-import { displaySubjects, languageFlag, languageLabel, subjectLabel } from '../lib/taxonomy';
+import { displaySubjects, languageLabel, subjectLabel } from '../lib/taxonomy';
 import { solrPhrase, uniq } from '../lib/text';
 import type { Book, Edition } from '../lib/types';
 import { useSettings } from '../store/settings';
@@ -200,7 +200,7 @@ export default function BookDetail() {
   if (main.loading && !book) return <Loading text="Buch wird geladen …" />;
   if (!book) {
     return (
-      <Empty icon="📕" title="Buch nicht gefunden">
+      <Empty title="Buch nicht gefunden">
         <p>{errorMessage(main.error)}</p>
         <Link to="/entdecken" className="btn">
           Zur Suche
@@ -219,7 +219,7 @@ export default function BookDetail() {
   const germanText = Boolean(wiki.data || germanBlurb);
   const foreignDescription = germanBlurb ? undefined : anyDescription;
   const libraryEntry = readIndex.entryFor(book);
-  const subjects = displaySubjects(book.subjects, 14);
+  const subjects = displaySubjects(book.subjects, 8);
   const languages = uniq(book.languages);
   const coverFallbacks = selected?.isbn13 ? [isbnCoverUrl(selected.isbn13, 'L')] : [];
   const displayTitle = selected?.languages.includes('ger') ? selected.title || book.title : book.title;
@@ -257,15 +257,15 @@ export default function BookDetail() {
               to={`/entdecken?aehnlich=${encodeURIComponent(book.id)}`}
               onClick={() => rememberBook(book)}
             >
-              🔁 Ähnliche suchen
+              Ähnliche suchen
             </Link>
             {topSubject && (
               <Link className="btn btn-block btn-ghost" to={`/themen?s=${encodeURIComponent(topSubject)}`}>
-                🕸️ Im Themen-Netz erkunden
+                Im Themen-Netz erkunden
               </Link>
             )}
             <Link className="btn btn-block btn-ghost" to={`/bibliothekar?buch=${encodeURIComponent(`${book.title} von ${book.authors[0] ?? ''}`)}`}>
-              ✨ KI fragen
+              KI fragen
             </Link>
           </div>
         </aside>
@@ -273,7 +273,6 @@ export default function BookDetail() {
         <div>
           {libraryEntry && (
             <div className="notice teal" style={{ marginBottom: 16 }}>
-              <span className="notice-icon">📚</span>
               <span>
                 In deiner Bibliothek{libraryEntry.shelf === 'to-read' ? ' (will ich lesen)' : ''}
                 {libraryEntry.rating ? ` – du hast ${libraryEntry.rating} ★ vergeben` : ''}
@@ -325,11 +324,10 @@ export default function BookDetail() {
             ) : null}
             {languages.length > 0 && (
               <div className="fact">
-                <b title={languages.map(languageLabel).join(', ')}>
-                  {languages.slice(0, 8).map(languageFlag).join(' ')}
-                  {languages.length > 8 ? ' …' : ''}
-                </b>
-                <span>{hasGerman(book) ? 'auch auf Deutsch' : 'Sprachen'}</span>
+                <b title={languages.map(languageLabel).join(', ')}>{hasGerman(book) ? 'Deutsch' : languageLabel(languages[0])}</b>
+                <span title={languages.map(languageLabel).join(', ')}>
+                  {languages.length > 1 ? `und ${languages.length - 1} weitere Sprache${languages.length > 2 ? 'n' : ''}` : 'Sprache'}
+                </span>
               </div>
             )}
           </div>
@@ -341,7 +339,7 @@ export default function BookDetail() {
               <div className="description">{wiki.data.extract}</div>
               {wiki.data.plot && (
                 <details className="disclosure">
-                  <summary>{wiki.data.plot.heading} – verrät die Handlung</summary>
+                  <summary>{wiki.data.plot.heading} (mit Spoilern)</summary>
                   <div className="description">{wiki.data.plot.text}</div>
                 </details>
               )}
@@ -381,8 +379,8 @@ export default function BookDetail() {
             <div className="mt-2">
               <div className="label">Themen</div>
               <div className="chips mt-1">
-                {subjects.map((s, i) => (
-                  <Link key={s} to={`/themen?s=${encodeURIComponent(book.subjects.find((x) => subjectLabel(x) === s) ?? s)}`} className="chip" style={{ animationDelay: `${i * 20}ms` }}>
+                {subjects.map((s) => (
+                  <Link key={s} to={`/themen?s=${encodeURIComponent(book.subjects.find((x) => subjectLabel(x) === s) ?? s)}`} className="chip">
                     {s}
                   </Link>
                 ))}
@@ -390,33 +388,23 @@ export default function BookDetail() {
             </div>
           )}
           {((book.places?.length ?? 0) > 0 || (book.times?.length ?? 0) > 0) && (
-            <div className="row wrap mt-2" style={{ gap: 6 }}>
-              {book.places?.slice(0, 6).map((p) => (
-                <span key={p} className="tag teal">
-                  📍 {p}
-                </span>
-              ))}
-              {book.times?.slice(0, 4).map((t) => (
-                <span key={t} className="tag gold">
-                  🕰️ {t}
-                </span>
-              ))}
-              {book.people?.slice(0, 4).map((p) => (
-                <span key={p} className="tag violet">
-                  🎭 {p}
-                </span>
-              ))}
-            </div>
+            <p className="small muted mt-2">
+              {[
+                book.places?.length ? `Schauplatz: ${book.places.slice(0, 3).join(', ')}` : '',
+                book.times?.length ? `Zeit: ${book.times.slice(0, 2).join(', ')}` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
           )}
 
           <section className="card mt-3">
             <div className="card-title">
-              <h2>📖 Ausgaben</h2>
+              <h2>Ausgaben</h2>
               <span className="muted small">Wähle eine Ausgabe – Cover, ISBN und Angebote passen sich an.</span>
             </div>
             {selected && (
               <div className="notice" style={{ marginBottom: 14 }}>
-                <span className="notice-icon">{languageFlag(selected.languages[0] ?? '')}</span>
                 <div>
                   <b>{selected.title || displayTitle}</b>
                   <div className="small muted">
@@ -443,7 +431,7 @@ export default function BookDetail() {
 
           <section className="card mt-2" id="angebote">
             <div className="card-title">
-              <h2>🛒 Angebote & Bezugsquellen</h2>
+              <h2>Angebote & Bezugsquellen</h2>
             </div>
             <OffersPanel
               title={displayTitle}
@@ -458,9 +446,9 @@ export default function BookDetail() {
       </div>
 
       {similar.data && similar.data.length > 0 && (
-        <BookRow title="Ähnliche Bücher" icon="🔁" subtitle="Gleiche Themen – nach deinem Geschmack sortiert, falls ein Profil vorhanden ist." items={similar.data} origin="Ähnlich" />
+        <BookRow title="Ähnliche Bücher" subtitle="Gleiche Themen – nach deinem Geschmack sortiert, falls ein Profil vorhanden ist." items={similar.data} origin="Ähnlich" />
       )}
-      {byAuthor.data && byAuthor.data.length > 0 && <BookRow title={`Mehr von ${book.authors[0]}`} icon="✍️" items={byAuthor.data} origin="Autor:in" />}
+      {byAuthor.data && byAuthor.data.length > 0 && <BookRow title={`Mehr von ${book.authors[0]}`} items={byAuthor.data} origin="Autor:in" />}
     </div>
   );
 }
@@ -512,7 +500,7 @@ function AiBlurb({ book, description, config, prominent }: { book: Book; descrip
   if (state.text || state.busy) {
     return (
       <div className="about-block ai-blurb">
-        <div className="label">✨ Kurz gesagt</div>
+        <div className="label">Kurz gesagt</div>
         {(state.text || '…')
           .split(/\n\s*\n/)
           .filter(Boolean)
@@ -528,7 +516,7 @@ function AiBlurb({ book, description, config, prominent }: { book: Book; descrip
   return (
     <div className="about-block">
       <button className={`btn btn-sm ${prominent ? 'btn-soft' : 'btn-ghost'}`} onClick={run}>
-        ✨ Kurz & spoilerfrei auf Deutsch
+        Kurz & spoilerfrei auf Deutsch
       </button>
       {state.error && (
         <p className="small mb-0" style={{ color: 'var(--rose)' }}>

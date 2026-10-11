@@ -3,6 +3,7 @@ import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
 import { CompassMark } from './components/CompassMark';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Loading, Toasts } from './components/Feedback';
+import { Icon, type IconName } from './components/Icon';
 import { Onboarding } from './components/Onboarding';
 import { RatingDialog } from './components/RatingDialog';
 import { AppFooter, UpdateBanner } from './components/UpdateBanner';
@@ -23,20 +24,20 @@ const Library = lazy(() => import('./pages/Library'));
 const Settings = lazy(() => import('./pages/Settings'));
 
 const NAV = [
-  { to: '/entdecken', label: 'Entdecken', icon: '🔎' },
-  { to: '/fuer-dich', label: 'Für dich', icon: '💛' },
+  { to: '/entdecken', label: 'Entdecken' },
+  { to: '/fuer-dich', label: 'Für dich' },
 ];
 
 const PLAY = [
-  { to: '/swipe', label: 'Bücher-Swipe', icon: '🃏', hint: 'Wischen & Geschmack lernen' },
-  { to: '/gluecksrad', label: 'Glücksrad & Blind Date', icon: '🎡', hint: 'Zufall mit Stil' },
-  { to: '/orakel', label: 'Lese-Orakel', icon: '🔮', hint: '7 Fragen, 1 Lesestimmung' },
-  { to: '/themen', label: 'Themen-Netz', icon: '🕸️', hint: 'Von Thema zu Thema springen' },
+  { to: '/swipe', label: 'Bücher-Swipe', hint: 'Wischen & Geschmack lernen' },
+  { to: '/gluecksrad', label: 'Glücksrad & Blind Date', hint: 'Zufall mit Stil' },
+  { to: '/orakel', label: 'Lese-Orakel', hint: '7 Fragen, 1 Lesestimmung' },
+  { to: '/themen', label: 'Themen-Netz', hint: 'Von Thema zu Thema springen' },
 ];
 
 const NAV_END = [
-  { to: '/bibliothekar', label: 'KI-Bibliothekar', icon: '✨' },
-  { to: '/bibliothek', label: 'Bibliothek', icon: '📚' },
+  { to: '/bibliothekar', label: 'KI-Bibliothekar' },
+  { to: '/bibliothek', label: 'Bibliothek' },
 ];
 
 function PlayMenu() {
@@ -53,15 +54,12 @@ function PlayMenu() {
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button className={active ? 'active-btn' : ''} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="true">
-        <span aria-hidden="true">🎲</span> Spielen <span aria-hidden="true" style={{ fontSize: '0.7em' }}>▾</span>
+        Spielen <Icon name="chevron" size={16} />
       </button>
       {open && (
         <div className="menu" role="menu">
           {PLAY.map((p) => (
             <NavLink key={p.to} to={p.to} role="menuitem" className="menu-item">
-              <span className="menu-icon" aria-hidden="true">
-                {p.icon}
-              </span>
               <span>
                 <b>{p.label}</b>
                 <span className="muted small" style={{ display: 'block' }}>
@@ -76,12 +74,12 @@ function PlayMenu() {
   );
 }
 
-const BOTTOM_NAV = [
-  { to: '/', label: 'Start', icon: '🧭', end: true },
-  { to: '/entdecken', label: 'Entdecken', icon: '🔎' },
-  { to: '/fuer-dich', label: 'Für dich', icon: '💛' },
-  { to: '/swipe', label: 'Swipe', icon: '🃏' },
-  { to: '/bibliothek', label: 'Bibliothek', icon: '📚' },
+const BOTTOM_NAV: Array<{ to: string; label: string; icon: IconName; end?: boolean }> = [
+  { to: '/', label: 'Start', icon: 'compass', end: true },
+  { to: '/entdecken', label: 'Entdecken', icon: 'search' },
+  { to: '/fuer-dich', label: 'Für dich', icon: 'star' },
+  { to: '/swipe', label: 'Swipe', icon: 'cards' },
+  { to: '/bibliothek', label: 'Bibliothek', icon: 'book' },
 ];
 
 function useTheme() {
@@ -120,19 +118,20 @@ export default function App() {
           <nav className="nav" aria-label="Hauptnavigation">
             {NAV.map((n) => (
               <NavLink key={n.to} to={n.to}>
-                <span aria-hidden="true">{n.icon}</span> {n.label}
+                {n.label}
               </NavLink>
             ))}
             <PlayMenu />
             {NAV_END.map((n) => (
               <NavLink key={n.to} to={n.to}>
-                <span aria-hidden="true">{n.icon}</span> {n.label}
+                {n.label}
               </NavLink>
             ))}
           </nav>
           <div className="header-actions">
             <NavLink to="/bibliothek?tab=merkliste" className="icon-btn" title="Merkliste" aria-label={`Merkliste (${wishCount})`}>
-              ♥{wishCount > 0 && <span className="dot">{wishCount > 99 ? '99+' : wishCount}</span>}
+              <Icon name="heart" />
+              {wishCount > 0 && <span className="dot">{wishCount > 99 ? '99+' : wishCount}</span>}
             </NavLink>
             <button
               className="icon-btn"
@@ -140,10 +139,10 @@ export default function App() {
               title={`Design: ${theme === 'auto' ? 'automatisch' : theme === 'dark' ? 'dunkel' : 'hell'}`}
               aria-label="Design wechseln"
             >
-              {theme === 'dark' ? '🌙' : theme === 'light' ? '☀️' : '🌗'}
+              <Icon name={theme === 'dark' ? 'moon' : theme === 'light' ? 'sun' : 'contrast'} />
             </button>
             <NavLink to="/einstellungen" className="icon-btn" title="Einstellungen" aria-label="Einstellungen">
-              ⚙️
+              <Icon name="sliders" />
             </NavLink>
           </div>
         </div>
@@ -174,7 +173,7 @@ export default function App() {
       <nav className="bottom-nav" aria-label="Navigation">
         {BOTTOM_NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end}>
-            <span aria-hidden="true">{n.icon}</span>
+            <Icon name={n.icon} size={22} />
             <span>{n.label}</span>
           </NavLink>
         ))}
