@@ -9,3 +9,4 @@ playwright-report
 .DS_Store
 daten/
 daten-sicherung/
+deploy/*.env
