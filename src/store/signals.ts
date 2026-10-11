@@ -9,6 +9,12 @@ interface SignalsState {
   clear: () => void;
 }
 
+/**
+ * Obergrenze nur als Schutz für den Speicher – praktisch bleiben alle Entscheidungen erhalten
+ * (pro Buch die letzte).
+ */
+export const MAX_SIGNALS = 20_000;
+
 /** Geschmackssignale aus Swipe, Glücksrad & Co. – fliessen ins Profil ein. */
 export const useSignals = create<SignalsState>()(
   persist(
@@ -24,7 +30,7 @@ export const useSignals = create<SignalsState>()(
           at: new Date().toISOString(),
         };
         const rest = get().signals.filter((s) => s.bookId !== book.id);
-        set({ signals: [...rest, signal].slice(-600) });
+        set({ signals: [...rest, signal].slice(-MAX_SIGNALS) });
       },
       clear: () => {
         announceBulkChange();

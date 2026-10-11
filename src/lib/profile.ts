@@ -100,10 +100,29 @@ export function signalWeight(s: TasteSignal): number {
   }
 }
 
+// Schlagwörter wiederholen sich ständig – ihre Konzepte nur einmal berechnen
+const conceptCache = new Map<string, string[]>();
+
 export function conceptsOf(subjects: string[]): string[] {
   const out = new Set<string>();
-  for (const s of subjects.slice(0, 40)) for (const c of subjectConcepts(s)) out.add(c);
+  for (const s of subjects.slice(0, 40)) {
+    let cs = conceptCache.get(s);
+    if (!cs) {
+      if (conceptCache.size > 50_000) conceptCache.clear();
+      cs = subjectConcepts(s);
+      conceptCache.set(s, cs);
+    }
+    for (const c of cs) out.add(c);
+  }
   return Array.from(out);
+}
+
+/**
+ * Swipes sind schnelle Bauchentscheidungen: Mit wachsender Zahl wächst ihr Gewicht im
+ * Gesamtprofil nur noch mit der Wurzel, damit tausende Swipes die Lesegeschichte nicht übertönen.
+ */
+export function signalScale(count: number): number {
+  return count > 250 ? Math.sqrt(250 / count) : 1;
 }
 
 export function buildProfile(entries: LibraryEntry[], signals: TasteSignal[] = []): TasteProfile {
@@ -111,7 +130,8 @@ export function buildProfile(entries: LibraryEntry[], signals: TasteSignal[] = [
   for (const e of entries) {
     items.push({ weight: entryWeight(e), subjects: [...(e.subjects ?? []), ...(e.tags ?? []).map((t) => t.replace(/-/g, ' '))], authors: e.authors, pages: e.pages, languages: e.languages });
   }
-  for (const s of signals) items.push({ weight: signalWeight(s), subjects: s.subjects, authors: s.authors });
+  const scale = signalScale(signals.length);
+  for (const s of signals) items.push({ weight: signalWeight(s) * scale, subjects: s.subjects, authors: s.authors });
 
   const itemConcepts = items.map((i) => conceptsOf(i.subjects));
   const df = new Map<string, number>();

@@ -14,7 +14,7 @@ import type { LibraryEntry, TasteSignal, WishlistItem } from '../lib/types';
 import { idbStorage } from './idbStorage';
 import { useLibrary } from './library';
 import { useSettings, type SettingsState } from './settings';
-import { useSignals } from './signals';
+import { MAX_SIGNALS, useSignals } from './signals';
 import { onBulkChange } from './syncIntent';
 import { toast } from './ui';
 import { useWishlist } from './wishlist';
@@ -72,7 +72,7 @@ const adapters: SyncAdapter[] = [
       for (const [id, v] of Object.entries(upserts)) byBook.set(id, v as TasteSignal);
       const signals = Array.from(byBook.values())
         .sort((a, b) => a.at.localeCompare(b.at))
-        .slice(-600);
+        .slice(-MAX_SIGNALS);
       useSignals.setState({ signals });
     },
     accepts: (id, v) => isObj(v) && v.bookId === id && typeof v.at === 'string' && Array.isArray(v.subjects) && Array.isArray(v.authors),

@@ -1868,8 +1868,8 @@ kbd {
   min-height: 520px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 26px;
-  box-shadow: var(--shadow-lg);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
   padding: 22px;
   touch-action: none;
   user-select: none;
@@ -1917,12 +1917,11 @@ kbd {
   top: 28px;
   right: 28px;
   z-index: 3;
-  font-family: var(--font-serif);
-  font-weight: 800;
-  font-size: 2rem;
-  padding: 4px 16px;
-  border: 4px solid currentColor;
-  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1.4rem;
+  padding: 4px 14px;
+  border: 3px solid currentColor;
+  border-radius: 8px;
   transform: rotate(10deg);
   letter-spacing: 0.06em;
 }
@@ -1946,34 +1945,33 @@ kbd {
   align-items: center;
 }
 .swipe-btn {
-  width: 62px;
-  height: 62px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: var(--surface);
-  box-shadow: var(--shadow);
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 .swipe-btn:hover {
-  transform: scale(1.1) translateY(-2px);
-  box-shadow: var(--shadow-lg);
+  border-color: currentColor;
+  background: var(--surface-2);
 }
 .swipe-btn.nope {
   color: var(--rose);
 }
 .swipe-btn.like {
   color: var(--teal);
-  width: 72px;
-  height: 72px;
-  font-size: 1.8rem;
+  width: 66px;
+  height: 66px;
+  font-size: 1.6rem;
 }
 .swipe-btn.save {
   color: var(--gold);
 }
 .swipe-btn.read {
-  color: var(--violet);
+  color: var(--ink-2);
   width: 50px;
   height: 50px;
   font-size: 1.1rem;

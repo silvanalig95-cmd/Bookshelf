@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom';
 import { bookPath } from '../components/BookCard';
 import { Cover } from '../components/Cover';
 import { Stars } from '../components/Stars';
-import { hasGerman } from '../lib/discovery';
+import { ageWeight, famePrior, hasGerman } from '../lib/discovery';
 import { useAsync, useProfile, useReadIndex } from '../lib/hooks';
 import { settle } from '../lib/http';
 import { docToBook, getWork, isbnCoverUrl, searchWorks } from '../lib/openLibrary';
-import { conceptsOf, isProfileUsable } from '../lib/profile';
-import { displaySubjects, GENRES, subjectLabel } from '../lib/taxonomy';
+import { isProfileUsable } from '../lib/profile';
+import { buildSwipeModel, contentFit, interleave, planDeck, summarizeModel, type DeckSlot } from '../lib/swipeModel';
+import { displaySubjects } from '../lib/taxonomy';
 import { shuffle, solrPhrase, truncate } from '../lib/text';
 import type { Book, SignalVerdict } from '../lib/types';
 import { germanWikipediaSummary } from '../lib/wikipedia';
@@ -17,14 +18,21 @@ import { useSignals } from '../store/signals';
 import { rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
 
-const FICTION = GENRES.filter((g) => g.group === 'fiction' && !['kinder', 'lyrik', 'kurzgeschichten'].includes(g.id));
 const THRESHOLD = 110;
+const DECK_SIZE = 16;
+
+interface DeckCard {
+  book: Book;
+  /** Warum die Karte im Stapel liegt – macht das Lernen nachvollziehbar. */
+  why: string;
+}
 
 interface SessionState {
   liked: Book[];
-  concepts: Map<string, { label: string; weight: number; subject: string }>;
   count: number;
 }
+
+const subjectClause = (subjects: string[]) => `subject:(${subjects.map(solrPhrase).join(' OR ')})`;
 
 export default function Swipe() {
   const language = useSettings((s) => s.language);
@@ -34,62 +42,78 @@ export default function Swipe() {
   const openRating = useUi((s) => s.openRating);
   const profile = useProfile();
   const readIndex = useReadIndex();
-  const [deck, setDeck] = useState<Book[]>([]);
+  const [deck, setDeck] = useState<DeckCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
   const [leaving, setLeaving] = useState<SignalVerdict | null>(null);
-  const [session, setSession] = useState<SessionState>({ liked: [], concepts: new Map(), count: 0 });
+  const [session, setSession] = useState<SessionState>({ liked: [], count: 0 });
+  // Alle bisherigen Entscheidungen – auch aus früheren Runden und von anderen Geräten
+  const model = useMemo(() => buildSwipeModel(signals), [signals]);
+  const summary = useMemo(() => summarizeModel(model), [model]);
+  const modelRef = useRef(model);
+  modelRef.current = model;
   const seen = useRef(new Set(signals.map((s) => s.bookId)));
   const fetching = useRef(false);
   const start = useRef<{ x: number; y: number } | null>(null);
 
   const langClause = language === 'any' ? '' : ' language:ger';
 
-  /** Holt neue Karten: teils nach gelerntem Geschmack, teils quer durch die Genres. */
+  /** Holt neue Karten: Genre-Mix per Thompson-Sampling aus dem Swipe-Modell, dazu Neuland. */
   const refill = useCallback(async () => {
     if (fetching.current) return;
     fetching.current = true;
     setLoading(true);
     try {
-      const learned = Array.from(session.concepts.values())
-        .filter((c) => c.weight > 0)
-        .sort((a, b) => b.weight - a.weight)
-        .slice(0, 4)
-        .map((c) => c.subject);
-      const profileSubjects = isProfileUsable(profile) ? profile.querySubjects.slice(0, 6) : [];
-      const queries: Array<{ q: string; sort: 'readinglog' | 'rating' }> = [];
-      if (learned.length >= 2) queries.push({ q: `subject:(${learned.map(solrPhrase).join(' OR ')})${langClause}`, sort: 'readinglog' });
-      if (profileSubjects.length) queries.push({ q: `subject:(${shuffle(profileSubjects).slice(0, 3).map(solrPhrase).join(' OR ')})${langClause}`, sort: 'rating' });
-      // Exploration: zufällige Genres
-      for (const g of shuffle(FICTION).slice(0, learned.length >= 2 ? 1 : 3)) {
-        queries.push({ q: `subject:(${g.subjects.slice(0, 2).map(solrPhrase).join(' OR ')})${langClause}`, sort: Math.random() < 0.5 ? 'readinglog' : 'rating' });
-      }
-      const results = await Promise.all(
-        queries.map((x) => settle(searchWorks(x.q, { sort: x.sort, limit: 12, offset: Math.floor(Math.random() * 8) * 12, lang: 'de' }))),
+      const m = modelRef.current;
+      const slots = planDeck(m, { size: DECK_SIZE });
+      const page = () => Math.floor(Math.random() * 3) * 20;
+      const fetchSlot = async (slot: DeckSlot): Promise<Book[]> => {
+        const genre = subjectClause(slot.genre.subjects.slice(0, 3));
+        const queries = [`${genre}${langClause}`];
+        if (slot.focus.length) queries.unshift(`${genre} AND ${subjectClause(slot.focus)}${langClause}`);
+        const results = await Promise.all(
+          queries.map((q, i) => settle(searchWorks(q, { sort: 'readinglog', limit: 20, offset: slot.kind === 'neuland' || (slot.focus.length && i === 0) ? 0 : page(), lang: 'de' }))),
+        );
+        return results.flatMap((r) => (r?.docs ?? []).map((d) => docToBook(d)));
+      };
+      const librarySubjects = isProfileUsable(profile) ? shuffle(profile.querySubjects.slice(0, 8)).slice(0, 3) : [];
+      const [slotBooks, libraryBooks] = await Promise.all([
+        Promise.all(slots.map(fetchSlot)),
+        librarySubjects.length
+          ? settle(searchWorks(`${subjectClause(librarySubjects)}${langClause}`, { sort: 'rating', limit: 20, offset: page(), lang: 'de' })).then((r) => (r?.docs ?? []).map((d) => docToBook(d)))
+          : Promise.resolve([] as Book[]),
+      ]);
+
+      const usable = (b: Book) => !seen.current.has(b.id) && !readIndex.has(b) && Boolean(b.coverId || b.coverUrl);
+      const pick = (books: Book[], count: number, fitWeight: number, why: string): DeckCard[] => {
+        const ranked = books
+          .filter(usable)
+          .filter((b, i, arr) => arr.findIndex((x) => x.id === b.id) === i)
+          // Passung zu deinen Swipes + bekannte Bücher bevorzugt + etwas Zufall, damit der Stapel lebendig bleibt
+          .map((b) => ({ b, s: contentFit(b, m) * fitWeight + famePrior(b) * 0.6 + ageWeight(b).adj * 0.8 + Math.random() * 0.6 }))
+          .sort((a, b) => b.s - a.s)
+          .slice(0, count);
+        for (const { b } of ranked) seen.current.add(b.id);
+        return ranked.map(({ b }) => ({ book: b, why }));
+      };
+      const lists = slots.map((slot, i) =>
+        pick(slotBooks[i], slot.count, slot.kind === 'neuland' ? 0.4 : 1, slot.kind === 'neuland' ? `Neuland: ${slot.genre.label}` : slot.genre.label),
       );
-      const fresh: Book[] = [];
-      for (const r of results) {
-        for (const d of shuffle(r?.docs ?? [])) {
-          const b = docToBook(d);
-          if (seen.current.has(b.id) || readIndex.has(b) || (!b.coverId && !b.coverUrl)) continue;
-          seen.current.add(b.id);
-          fresh.push(b);
-          if (fresh.length >= 16) break;
-        }
-      }
-      setDeck((d) => [...d, ...shuffle(fresh)]);
+      if (libraryBooks.length) lists.push(pick(libraryBooks, 2, 1, 'passt zu deinem Profil'));
+      setDeck((d) => [...d, ...interleave(shuffle(lists))]);
     } finally {
       fetching.current = false;
       setLoading(false);
     }
-  }, [session.concepts, profile, readIndex, langClause]);
+  }, [profile, readIndex, langClause]);
 
   useEffect(() => {
     if (deck.length < 4) refill();
   }, [deck.length, refill]);
 
-  const current = deck[0];
-  const next = deck[1];
+  const current = deck[0]?.book;
+  const currentWhy = deck[0]?.why;
+  const next = deck[1]?.book;
 
   const decide = useCallback(
     (verdict: SignalVerdict) => {
@@ -99,21 +123,11 @@ export default function Swipe() {
       record(book, verdict);
       if (verdict === 'save') {
         addWish(book, 'Swipe');
-        toast('♥ Auf der Merkliste');
+        toast('Auf der Merkliste ♥');
       }
       if (verdict === 'read') openRating(book);
-      // Sitzungsgeschmack aktualisieren
-      setSession((s) => {
-        const concepts = new Map(s.concepts);
-        const w = verdict === 'like' ? 1 : verdict === 'save' ? 1.3 : verdict === 'dislike' ? -0.8 : 0.4;
-        for (const subj of book.subjects.slice(0, 30)) {
-          for (const c of conceptsOf([subj])) {
-            const prev = concepts.get(c) ?? { label: subjectLabel(subj), weight: 0, subject: subj };
-            concepts.set(c, { ...prev, weight: prev.weight + w });
-          }
-        }
-        return { liked: verdict === 'like' || verdict === 'save' ? [book, ...s.liked] : s.liked, concepts, count: s.count + 1 };
-      });
+      // Das Modell lernt über die gespeicherten Signale; hier nur die Runde mitzählen
+      setSession((s) => ({ liked: verdict === 'like' || verdict === 'save' ? [book, ...s.liked] : s.liked, count: s.count + 1 }));
       setTimeout(() => {
         setDeck((d) => d.slice(1));
         setLeaving(null);
@@ -154,16 +168,14 @@ export default function Swipe() {
     else setDrag({ x: 0, y: 0, active: false });
   };
 
-  const learned = useMemo(
+  const recentLikes = useMemo(
     () =>
-      Array.from(session.concepts.values())
-        .filter((c) => c.weight > 0.9)
-        .sort((a, b) => b.weight - a.weight)
-        .filter((c, i, arr) => arr.findIndex((x) => x.label === c.label) === i)
-        .slice(0, 8),
-    [session.concepts],
+      signals
+        .filter((x) => x.verdict === 'like' || x.verdict === 'save')
+        .slice(-6)
+        .reverse(),
+    [signals],
   );
-  const maxLearned = learned[0]?.weight ?? 1;
 
   const exitX = leaving === 'like' ? 700 : leaving === 'dislike' ? -700 : 0;
   const exitY = leaving === 'save' ? -700 : leaving === 'read' ? 700 : 0;
@@ -174,11 +186,10 @@ export default function Swipe() {
   return (
     <div>
       <div className="page-head">
-        <p className="eyebrow">Spielen · Bücher-Swipe</p>
-        <h1>Wisch dich zum nächsten Buch</h1>
+        <h1>Bücher-Swipe</h1>
         <p>
-          Rechts = klingt spannend, links = nicht meins, hoch = merken. Der Stapel lernt mit jeder Karte, was dich reizt – und deine Entscheidungen fliessen in alle
-          Empfehlungen ein. Tastatur: <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>
+          Rechts = klingt spannend, links = nicht meins, hoch = merken. Jede Entscheidung wird gespeichert und fliesst in den nächsten Stapel und in alle Empfehlungen
+          ein. Tastatur: <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>
         </p>
       </div>
 
@@ -207,7 +218,7 @@ export default function Swipe() {
               {hint && (
                 <div className={`swipe-stamp ${hint}`}>{hint === 'like' ? 'SPANNEND' : hint === 'dislike' ? 'NÖ' : 'MERKEN'}</div>
               )}
-              <SwipeCardContent book={current} />
+              <SwipeCardContent book={current} why={currentWhy} />
             </div>
           )}
           <div className="swipe-actions">
@@ -229,25 +240,47 @@ export default function Swipe() {
         <aside className="stack">
           <div className="card">
             <h3>Was ich gelernt habe</h3>
-            {learned.length ? (
+            {summary.genres.length ? (
               <div className="bar-list">
-                {learned.map((c) => (
-                  <div key={c.label} className="bar-row">
-                    <span className="bar-label">{c.label}</span>
+                {summary.genres.slice(0, 7).map((g) => (
+                  <div key={g.id} className="bar-row" title={`${Math.round(g.evidence)} Entscheidungen`}>
+                    <span className="bar-label">{g.label}</span>
                     <span className="bar-track">
-                      <span className="bar-fill" style={{ width: `${(c.weight / maxLearned) * 100}%`, background: 'var(--rose)' }} />
+                      <span className="bar-fill" style={{ width: `${Math.round(g.affinity * 100)}%`, background: 'var(--ink-2)' }} />
                     </span>
-                    <span className="bar-value">{Math.round(c.weight)}</span>
+                    <span className="bar-value">{Math.round(g.affinity * 100)} %</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="small muted mb-0">Nach ein paar ♥ siehst du hier, welche Themen dich anziehen. Die nächsten Karten richten sich danach.</p>
+              <p className="small muted mb-0">Nach ein paar Karten siehst du hier, welche Genres und Themen dich anziehen.</p>
             )}
-            <p className="tiny muted mt-1 mb-0">{session.count} Karten in dieser Runde · insgesamt {signals.length} Entscheidungen gespeichert</p>
+            {summary.liked.length > 0 && (
+              <p className="small mt-1 mb-0">
+                <span className="muted">Reizt dich: </span>
+                {summary.liked.map((c) => c.label).join(', ')}
+              </p>
+            )}
+            {summary.disliked.length > 0 && (
+              <p className="small mt-1 mb-0">
+                <span className="muted">Eher nicht: </span>
+                {summary.disliked.map((c) => c.label).join(', ')}
+              </p>
+            )}
+            {summary.toExplore.length > 0 && (
+              <p className="small mt-1 mb-0">
+                <span className="muted">Noch zu entdecken: </span>
+                {summary.toExplore.slice(0, 6).join(', ')}
+                {summary.toExplore.length > 6 ? ' …' : ''}
+              </p>
+            )}
+            <p className="tiny muted mt-2 mb-0">
+              {model.total.toLocaleString('de-CH')} Entscheidungen gespeichert · {session.count} in dieser Runde. Jeder Stapel: etwa drei Viertel nach deinem
+              Geschmack, ein Viertel Neuland, kein Genre über 30 %.
+            </p>
           </div>
           <div className="card">
-            <h3>♥ Deine Treffer</h3>
+            <h3>{session.liked.length ? 'Deine Treffer' : 'Zuletzt gemocht'}</h3>
             {session.liked.length ? (
               <div className="stack" style={{ gap: 8 }}>
                 {session.liked.slice(0, 8).map((b) => (
@@ -264,6 +297,14 @@ export default function Swipe() {
                   Passende Empfehlungen →
                 </Link>
               </div>
+            ) : recentLikes.length ? (
+              <div className="stack" style={{ gap: 6 }}>
+                {recentLikes.map((x) => (
+                  <Link key={x.bookId} to={`/buch/${encodeURIComponent(x.bookId)}`} className="small" style={{ color: 'var(--ink)' }}>
+                    <b>{x.title}</b> <span className="muted">· {x.authors[0]}</span>
+                  </Link>
+                ))}
+              </div>
             ) : (
               <p className="small muted mb-0">Noch nichts – wisch los!</p>
             )}
@@ -274,7 +315,7 @@ export default function Swipe() {
   );
 }
 
-function SwipeCardContent({ book, preview = false }: { book: Book; preview?: boolean }) {
+function SwipeCardContent({ book, preview = false, why }: { book: Book; preview?: boolean; why?: string }) {
   const work = useAsync(async (signal) => (preview ? undefined : settle(getWork(book.id, signal))), [book.id, preview]);
   const wiki = useAsync(
     async (signal) => (preview ? undefined : germanWikipediaSummary({ titles: [book.title], author: book.authors[0] }, signal).catch(() => undefined)),
@@ -287,10 +328,8 @@ function SwipeCardContent({ book, preview = false }: { book: Book; preview?: boo
     <div className="swipe-content">
       <Cover title={book.title} author={book.authors[0]} coverId={book.coverId} src={book.coverUrl} size="L" fallbacks={isbn ? [isbnCoverUrl(isbn, 'L')] : []} className="swipe-cover" />
       <div className="swipe-info">
-        <div className="row wrap" style={{ gap: 6 }}>
-          {hasGerman(book) && <span className="tag teal">auf Deutsch</span>}
-          {book.year && <span className="tag">{book.year}</span>}
-          {book.pages && <span className="tag">{book.pages} S.</span>}
+        <div className="small muted">
+          {[why, book.year, book.pages ? `${book.pages} Seiten` : undefined, hasGerman(book) ? undefined : 'nicht auf Deutsch'].filter(Boolean).join(' · ')}
         </div>
         <h2 className="mt-1">{book.title}</h2>
         <div className="muted">{book.authors.slice(0, 2).join(', ')}</div>
