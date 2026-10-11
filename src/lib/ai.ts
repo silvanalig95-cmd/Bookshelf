@@ -5,7 +5,7 @@
  */
 import type { AiConfig, AiRecommendResult, ChatReply, ChatTurn } from './aiPrompts';
 
-export { AiError, parseBookRefs, readingContext, CHAT_INSTRUCTIONS } from './aiPrompts';
+export { AiError, BLURB_SYSTEM, blurbPrompt, parseBookRefs, readingContext, CHAT_INSTRUCTIONS } from './aiPrompts';
 export type { AiConfig, AiProvider, AiRecommendation, AiRecommendResult, AiVia, ChatReply, ChatTurn } from './aiPrompts';
 export { aiAvailability, aiConfigFor, resetAiStatus, AI_MODEL_NAMES } from './aiStatus';
 
@@ -22,6 +22,12 @@ export async function aiRecommend(
 export async function aiChat(history: ChatTurn[], config: AiConfig, context: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
   if (config.provider === 'gemini') return (await import('./gemini')).geminiChat(history, config, context, onText, signal);
   return (await import('./claude')).claudeChat(history, config, context, onText, signal);
+}
+
+/** Ein Auftrag mit freier Textantwort, gestreamt. */
+export async function aiText(config: AiConfig, systemParts: string[], prompt: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
+  if (config.provider === 'gemini') return (await import('./gemini')).geminiText(config, systemParts, prompt, onText, signal);
+  return (await import('./claude')).claudeText(config, systemParts, prompt, onText, signal);
 }
 
 /** Beide Anbindungen werfen bereits verständliche Meldungen (AiError). */

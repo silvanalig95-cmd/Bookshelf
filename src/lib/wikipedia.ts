@@ -15,6 +15,41 @@ export interface WikiSummary {
   extract: string;
   url: string;
   thumbnail?: string;
+  /** Abschnitt zum Inhalt (Handlung, Inhaltsangabe …) – verrät oft das Ende. */
+  plot?: { heading: string; text: string };
+}
+
+const PLOT_HEADING = /^(inhalt|handlung|inhaltsangabe|zusammenfassung|plot|die handlung|inhalt und aufbau|handlung und aufbau|aufbau und inhalt|inhalt und form)\b/i;
+const MAX_PLOT = 4000;
+
+/** Sucht im vollen Artikeltext (explaintext, exsectionformat=wiki) den Abschnitt zum Inhalt. */
+export function extractPlot(article: string): WikiSummary['plot'] {
+  const parts = article.split(/\n==[ \t]*([^=\n]+?)[ \t]*==[ \t]*\n/);
+  for (let i = 1; i < parts.length; i += 2) {
+    const heading = parts[i].trim();
+    if (!PLOT_HEADING.test(heading)) continue;
+    const text = (parts[i + 1] ?? '')
+      .replace(/\n={3,}[ \t]*([^=\n]+?)[ \t]*={3,}[ \t]*\n/g, '\n\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    if (text.length < 80) continue;
+    return { heading, text: text.length > MAX_PLOT ? `${text.slice(0, text.lastIndexOf(' ', MAX_PLOT))} …` : text };
+  }
+  return undefined;
+}
+
+async function withPlot(w: WikiSummary, signal?: AbortSignal): Promise<WikiSummary> {
+  try {
+    const d = await fetchJson<{ query?: { pages?: Record<string, { extract?: string }> } }>(
+      `https://de.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exsectionformat=wiki&redirects=1&format=json&origin=*&titles=${encodeURIComponent(w.title)}`,
+      { signal, ttl: 24 * 60 * 60_000, retries: 0, headers: HEADERS },
+    );
+    const text = Object.values(d.query?.pages ?? {})[0]?.extract;
+    const plot = text ? extractPlot(`\n${text}`) : undefined;
+    return plot ? { ...w, plot } : w;
+  } catch {
+    return w; // Der Inhalt ist eine Zugabe – ohne ihn bleibt die Zusammenfassung
+  }
 }
 
 interface RestSummary {
@@ -60,7 +95,7 @@ export async function germanWikipediaSummary(
       if (title) {
         const s = await summary(title, signal);
         const w = s && toWiki(s);
-        if (w) return w;
+        if (w) return withPlot(w, signal);
       }
     } catch {
       /* Wikidata nicht erreichbar – weiter mit Titelsuche */
@@ -77,7 +112,7 @@ export async function germanWikipediaSummary(
       if (!w) continue;
       const text = normalize(w.extract);
       const authorOk = !surname || text.includes(surname);
-      if (authorOk && BOOKISH.test(text)) return w;
+      if (authorOk && BOOKISH.test(text)) return withPlot(w, signal);
     }
   }
   return undefined;

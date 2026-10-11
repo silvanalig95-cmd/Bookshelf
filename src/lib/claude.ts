@@ -95,6 +95,15 @@ function toMessages(history: ChatTurn[]): Message[] {
 }
 
 export async function claudeChat(history: ChatTurn[], config: AiConfig, context: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
+  return streamText(config, [`${BASE_SYSTEM}\n\n${CHAT_INSTRUCTIONS}`, `Lesekontext der Person:\n${context}`], toMessages(history), onText, signal);
+}
+
+/** Ein einzelner Auftrag mit freier Textantwort (z. B. die Kurzbeschreibung auf der Buchseite). */
+export async function claudeText(config: AiConfig, systemParts: string[], prompt: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
+  return streamText(config, systemParts, [{ role: 'user', content: prompt }], onText, signal);
+}
+
+async function streamText(config: AiConfig, systemParts: string[], messages: Message[], onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
   const client = makeClient(config);
   try {
     const stream = client.beta.messages.stream(
@@ -104,11 +113,8 @@ export async function claudeChat(history: ChatTurn[], config: AiConfig, context:
         ...fallbackParams(config.model),
         cache_control: { type: 'ephemeral' },
         output_config: { effort: 'medium' },
-        system: [
-          { type: 'text', text: `${BASE_SYSTEM}\n\n${CHAT_INSTRUCTIONS}` },
-          { type: 'text', text: `Lesekontext der Person:\n${context}` },
-        ],
-        messages: toMessages(history),
+        system: systemParts.map((text) => ({ type: 'text' as const, text })),
+        messages,
       },
       { signal },
     );

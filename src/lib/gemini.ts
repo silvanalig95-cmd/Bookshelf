@@ -249,9 +249,18 @@ export async function* sseData(body: ReadableStream<Uint8Array>): AsyncGenerator
 }
 
 export async function geminiChat(history: ChatTurn[], config: AiConfig, context: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
+  return streamText(config, [`${BASE_SYSTEM}\n\n${CHAT_INSTRUCTIONS}`, `Lesekontext der Person:\n${context}`], toContents(history), onText, signal);
+}
+
+/** Ein einzelner Auftrag mit freier Textantwort (z. B. die Kurzbeschreibung auf der Buchseite). */
+export async function geminiText(config: AiConfig, systemParts: string[], prompt: string, onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
+  return streamText(config, systemParts, [{ role: 'user', parts: [{ text: prompt }] }], onText, signal);
+}
+
+async function streamText(config: AiConfig, systemParts: string[], contents: Content[], onText: (delta: string) => void, signal?: AbortSignal): Promise<ChatReply> {
   const body = {
-    systemInstruction: system([`${BASE_SYSTEM}\n\n${CHAT_INSTRUCTIONS}`, `Lesekontext der Person:\n${context}`]),
-    contents: toContents(history),
+    systemInstruction: system(systemParts),
+    contents,
     generationConfig: { maxOutputTokens: 8192, thinkingConfig: { thinkingLevel: 'LOW' } },
   };
   const { res, model, note } = await post(config, 'streamGenerateContent', body, signal);

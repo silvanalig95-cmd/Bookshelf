@@ -1169,6 +1169,43 @@ textarea {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.about-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.about-block > .btn {
+  align-self: flex-start;
+}
+.ai-blurb {
+  padding-left: 14px;
+  border-left: 2px solid var(--violet, var(--accent));
+}
+details.disclosure {
+  margin-bottom: 14px;
+}
+details.disclosure > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.9rem;
+  list-style: none;
+}
+details.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+details.disclosure > summary::before {
+  content: '▸ ';
+}
+details.disclosure[open] > summary::before {
+  content: '▾ ';
+}
+details.disclosure[open] > summary {
+  margin-bottom: 8px;
+}
+details.disclosure > .description {
+  margin-bottom: 8px;
+}
 .first-sentence-box {
   margin: 18px 0;
 }

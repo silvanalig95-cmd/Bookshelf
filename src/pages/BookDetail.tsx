@@ -9,7 +9,7 @@ import { Stars } from '../components/Stars';
 import { distinctiveSubjects, hasGerman } from '../lib/discovery';
 import { formatLabel, pickDefaultEdition } from '../lib/editions';
 import { googleBookByIsbn, googleVolume, type GBResult } from '../lib/googleBooks';
-import { errorMessage, useAsync, useProfile, useReadIndex } from '../lib/hooks';
+import { errorMessage, useAsync, useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { settle } from '../lib/http';
 import { docToBook, getBookByWorkId, getEditions, getWork, isbnCoverUrl, searchWorks, workForIsbn, type WorkDetails } from '../lib/openLibrary';
 import { scoreForProfile } from '../lib/recommend';
@@ -18,6 +18,8 @@ import { solrPhrase, uniq } from '../lib/text';
 import type { Book, Edition } from '../lib/types';
 import { useSettings } from '../store/settings';
 import { deeplUrl, germanWikipediaSummary, guessLanguage } from '../lib/wikipedia';
+import type { AiConfig } from '../lib/aiPrompts';
+import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
 import { useSignals } from '../store/signals';
 import { recallBook, rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
@@ -83,7 +85,13 @@ export default function BookDetail() {
   const saved = useWishlist((s) => Boolean(s.items[id]));
   const toggleWish = useWishlist((s) => s.toggle);
   const openRating = useUi((s) => s.openRating);
-  const [expanded, setExpanded] = useState(false);
+  const aiSettings = useSettings();
+  const [ai, setAi] = useState<AiAccess>({ available: false });
+  useEffect(() => {
+    aiAvailability(aiSettings).then(setAi);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiSettings.aiProvider, aiSettings.aiApiKey, aiSettings.geminiApiKey]);
+  const aiConfig = aiConfigFor(ai, aiSettings);
 
   const main = useAsync((signal) => loadBook(id, signal, googleApiKey, region), [id]);
   useEffect(() => {
@@ -202,8 +210,14 @@ export default function BookDetail() {
   }
 
   const gb = gbState.data;
-  const descriptionDe = gb?.language === 'ger' ? gb.book.description : undefined;
-  const description = descriptionDe ?? book.description ?? gb?.book.description;
+  // Beschreibungen: Deutsches zuerst (Wikipedia, deutscher Klappentext), Fremdsprachiges nur auf Wunsch
+  const gbGerman = gb?.language === 'ger' ? gb.book.description : undefined;
+  const anyDescription = book.description ?? gb?.book.description;
+  const descriptionLang = anyDescription ? guessLanguage(anyDescription) : undefined;
+  const germanBlurb = gbGerman ?? (descriptionLang === 'ger' ? anyDescription : undefined);
+  const description = germanBlurb ?? anyDescription;
+  const germanText = Boolean(wiki.data || germanBlurb);
+  const foreignDescription = germanBlurb ? undefined : anyDescription;
   const libraryEntry = readIndex.entryFor(book);
   const subjects = displaySubjects(book.subjects, 14);
   const languages = uniq(book.languages);
@@ -320,10 +334,18 @@ export default function BookDetail() {
             )}
           </div>
 
+          {/* Worum geht's – deutsch zuerst, Fremdsprachiges nur auf Wunsch */}
+          {!germanText && <AiBlurb book={book} description={description} config={aiConfig} prominent />}
           {wiki.data && (
-            <div className="mb-0" style={{ marginBottom: 16 }}>
+            <div className="about-block">
               <div className="description">{wiki.data.extract}</div>
-              <div className="tiny muted mt-1">
+              {wiki.data.plot && (
+                <details className="disclosure">
+                  <summary>{wiki.data.plot.heading} – verrät die Handlung</summary>
+                  <div className="description">{wiki.data.plot.text}</div>
+                </details>
+              )}
+              <div className="tiny muted">
                 Aus der deutschsprachigen Wikipedia ·{' '}
                 <a href={wiki.data.url} target="_blank" rel="noopener noreferrer">
                   Artikel lesen ↗
@@ -331,39 +353,26 @@ export default function BookDetail() {
               </div>
             </div>
           )}
-          {description ? (
-            (() => {
-              const lang = descriptionDe ? 'ger' : guessLanguage(description);
-              const foreign = lang && lang !== 'ger';
-              const collapsedForeign = foreign && wiki.data && !expanded;
-              return (
-                <div className={wiki.data ? 'card' : ''} style={wiki.data ? { padding: 16, background: 'var(--surface-2)' } : undefined}>
-                  {wiki.data && <div className="label">Klappentext{foreign ? ` (${languageLabel(lang!)})` : ''}</div>}
-                  {!collapsedForeign && <div className={`description ${expanded ? '' : 'clamped'}`}>{description}</div>}
-                  <div className="row wrap" style={{ gap: 6 }}>
-                    {(description.length > 600 || collapsedForeign) && (
-                      <button className="btn btn-ghost btn-sm" onClick={() => setExpanded((x) => !x)}>
-                        {collapsedForeign ? 'Anzeigen' : expanded ? 'Weniger' : 'Weiterlesen'}
-                      </button>
-                    )}
-                    {foreign && (
-                      <a className="btn btn-ghost btn-sm" href={deeplUrl(description, lang)} target="_blank" rel="noopener noreferrer">
-                        🌐 Mit DeepL übersetzen
-                      </a>
-                    )}
-                  </div>
-                  {descriptionDe && <div className="tiny muted">Klappentext: Google Books</div>}
-                </div>
-              );
-            })()
-          ) : (
-            !wiki.data && !wiki.loading && <p className="muted">Für dieses Buch ist noch keine Beschreibung hinterlegt.</p>
+          {germanBlurb && !wiki.data && (
+            <div className="about-block">
+              <div className="description">{germanBlurb}</div>
+              <div className="tiny muted">Klappentext: {gbGerman ? 'Google Books' : 'Open Library'}</div>
+            </div>
           )}
-          {book.firstSentence && (
+          {germanText && <AiBlurb book={book} description={description} config={aiConfig} />}
+          {foreignDescription && (
+            <details className="disclosure" open={!germanText && !aiConfig}>
+              <summary>{descriptionLang ? `Klappentext auf ${languageLabel(descriptionLang)}` : 'Klappentext (fremdsprachig)'}</summary>
+              <div className="description">{foreignDescription}</div>
+              <a className="small" href={deeplUrl(foreignDescription, descriptionLang)} target="_blank" rel="noopener noreferrer">
+                Mit DeepL übersetzen ↗
+              </a>
+            </details>
+          )}
+          {!germanText && !foreignDescription && !wiki.loading && <p className="muted">Für dieses Buch ist noch keine Beschreibung hinterlegt.</p>}
+          {book.firstSentence && germanish(book.firstSentence) && (
             <figure className="first-sentence-box">
-              <figcaption className="label">
-                So beginnt das Buch{germanish(book.firstSentence) ? '' : ' – im Original'}
-              </figcaption>
+              <figcaption className="label">So beginnt das Buch</figcaption>
               <blockquote className="first-sentence">„{book.firstSentence}“</blockquote>
             </figure>
           )}
@@ -452,6 +461,80 @@ export default function BookDetail() {
         <BookRow title="Ähnliche Bücher" icon="🔁" subtitle="Gleiche Themen – nach deinem Geschmack sortiert, falls ein Profil vorhanden ist." items={similar.data} origin="Ähnlich" />
       )}
       {byAuthor.data && byAuthor.data.length > 0 && <BookRow title={`Mehr von ${book.authors[0]}`} icon="✍️" items={byAuthor.data} origin="Autor:in" />}
+    </div>
+  );
+}
+
+/** Kurze, spoilerfreie deutsche Beschreibung von der KI – auf Wunsch erzeugt und auf dem Gerät gemerkt. */
+function AiBlurb({ book, description, config, prominent }: { book: Book; description?: string; config?: AiConfig; prominent?: boolean }) {
+  const entries = useLibraryEntries();
+  const profile = useProfile();
+  const key = `lesekompass.blurb.v1.${book.id}`;
+  const [state, setState] = useState<{ text?: string; model?: string; busy?: boolean; error?: string }>({});
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      setState(raw ? (JSON.parse(raw) as { text: string; model: string }) : {});
+    } catch {
+      setState({});
+    }
+  }, [key]);
+
+  if (!state.text && !state.busy && !config) return null;
+
+  const run = async () => {
+    if (!config) return;
+    const { aiErrorMessage, aiText, BLURB_SYSTEM, blurbPrompt, readingContext, AI_MODEL_NAMES } = await import('../lib/ai');
+    let acc = '';
+    setState({ busy: true, text: '' });
+    try {
+      const reply = await aiText(
+        config,
+        [BLURB_SYSTEM, `Lesekontext der Person:\n${readingContext(entries, profile)}`],
+        blurbPrompt({ title: book.title, author: book.authors[0] ?? 'unbekannt', year: book.year, originalTitle: book.originalTitle, description, subjects: book.subjects }),
+        (delta) => {
+          acc += delta;
+          setState({ busy: true, text: acc });
+        },
+      );
+      const done = { text: reply.text.trim(), model: AI_MODEL_NAMES[reply.model] ?? reply.model };
+      setState(done);
+      try {
+        localStorage.setItem(key, JSON.stringify(done));
+      } catch {
+        /* Speicher voll – dann eben nur für jetzt */
+      }
+    } catch (err) {
+      setState({ error: aiErrorMessage(err) });
+    }
+  };
+
+  if (state.text || state.busy) {
+    return (
+      <div className="about-block ai-blurb">
+        <div className="label">✨ Kurz gesagt</div>
+        {(state.text || '…')
+          .split(/\n\s*\n/)
+          .filter(Boolean)
+          .map((p, i) => (
+            <p key={i} className="description mb-0">
+              {p.trim()}
+            </p>
+          ))}
+        {!state.busy && <div className="tiny muted">KI-Zusammenfassung{state.model ? ` · ${state.model}` : ''} – kann Fehler enthalten.</div>}
+      </div>
+    );
+  }
+  return (
+    <div className="about-block">
+      <button className={`btn btn-sm ${prominent ? 'btn-soft' : 'btn-ghost'}`} onClick={run}>
+        ✨ Kurz & spoilerfrei auf Deutsch
+      </button>
+      {state.error && (
+        <p className="small mb-0" style={{ color: 'var(--rose)' }}>
+          {state.error}
+        </p>
+      )}
     </div>
   );
 }

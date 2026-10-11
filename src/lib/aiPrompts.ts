@@ -142,6 +142,38 @@ export function cleanRecommendation(raw: unknown): unknown {
 }
 
 /* ------------------------------------------------------------------ */
+/* Kurzbeschreibung für die Buchseite                                    */
+/* ------------------------------------------------------------------ */
+
+export const BLURB_SYSTEM = `${BASE_SYSTEM}
+
+Du schreibst kurze deutsche Buchbeschreibungen für die Buchseite der App: klar, konkret, ohne Werbesprache.`;
+
+export interface BlurbInput {
+  title: string;
+  author: string;
+  year?: number;
+  originalTitle?: string;
+  description?: string;
+  subjects: string[];
+}
+
+export function blurbPrompt(b: BlurbInput): string {
+  return [
+    `Buch: „${b.title}“ von ${b.author}${b.year ? ` (${b.year})` : ''}${b.originalTitle && b.originalTitle !== b.title ? `, Originaltitel „${b.originalTitle}“` : ''}.`,
+    b.description ? `Klappentext (evtl. in einer anderen Sprache):\n${b.description.slice(0, 2000)}` : '',
+    b.subjects.length ? `Schlagwörter: ${b.subjects.slice(0, 15).join(', ')}` : '',
+    '',
+    'Schreib auf Deutsch, zwei kurze Absätze:',
+    '1. Worum es geht – 3 bis 5 Sätze, spoilerfrei: Ausgangslage, Thema, Ton und Stil. Keine Wendungen, kein Ende.',
+    '2. Ein Satz, der mit „Passt zu dir, weil …“ oder „Eher nicht dein Fall, weil …“ beginnt und sich auf den Lesekontext stützt. Ohne Lesekontext: „Für alle, die …“.',
+    'Kennst du das Buch nicht sicher, stütze dich nur auf das Material oben und sag ehrlich, wenn es dünn ist. Keine Überschriften, keine Aufzählung, kein [[…]]-Format.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/* ------------------------------------------------------------------ */
 /* Chat (KI-Bibliothekar)                                                */
 /* ------------------------------------------------------------------ */
 
