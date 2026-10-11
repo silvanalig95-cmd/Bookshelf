@@ -20,6 +20,6 @@ services:
     ports:
       - "8080:8080"      # http://localhost:8080/ – ist 8080 belegt, z. B. "8081:8080" eintragen
     volumes:
-      - lesekompass-app:/srv/lesekompass   # heruntergeladene Versionen (darf gelöscht werden, lädt neu)
+      - lesekompass-app:/srv/lesekompass   # Versionen UND deine Daten (data/) – nie mit "down -v" löschen
 volumes:
   lesekompass-app:
