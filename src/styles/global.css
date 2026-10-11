@@ -1169,6 +1169,12 @@ textarea {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.first-sentence-box {
+  margin: 18px 0;
+}
+.first-sentence-box .first-sentence {
+  margin: 6px 0 0;
+}
 .first-sentence {
   font-family: var(--font-serif);
   font-style: italic;

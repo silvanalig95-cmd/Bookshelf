@@ -318,6 +318,12 @@ export function hasCriteria(p: DiscoveryParams): boolean {
   );
 }
 
+/** Genres, die ein Buch so prägen, dass ein Nebenmotiv (Mord, Liebe, Spionage …) es nicht zu einem anderen Genre macht. */
+const DOMINANT_GENRES = ['fantasy', 'scifi', 'horror'];
+
+/** Mindestzahl Bewertungen, damit ein Buch in einer „nach Bewertung“ sortierten Anfrage zählt. */
+export const MIN_RATINGS = 15;
+
 export function buildQueryPlans(p: DiscoveryParams, ctx: DiscoveryContext = {}): QueryPlan[] {
   const genres = p.genres.map(genreById).filter(Boolean) as NonNullable<ReturnType<typeof genreById>>[];
   const moods = p.moods.map(moodById).filter(Boolean) as NonNullable<ReturnType<typeof moodById>>[];
@@ -336,6 +342,8 @@ export function buildQueryPlans(p: DiscoveryParams, ctx: DiscoveryContext = {}):
   const personClause = p.character.trim() ? `person:${solrPhrase(p.character)}` : '';
   const text = textTerms(p.text);
   const fameClause = p.fame <= -2 ? 'readinglog_count:[0 TO 120]' : '';
+  // „Bestbewertet“ heisst sonst: ein einziges 5-Sterne-Urteil schlägt jeden Klassiker
+  const rated = p.fame <= -1 ? '' : `ratings_count:[${MIN_RATINGS} TO *]`;
   const exclusion = [
     ...excludeGenres.flatMap((g) => g.subjects.slice(0, 2).map((s) => `-subject:${solrPhrase(s)}`)),
     ...p.excludeWords.filter(Boolean).map((w) => `-${solrPhrase(w)}`),
@@ -360,7 +368,7 @@ export function buildQueryPlans(p: DiscoveryParams, ctx: DiscoveryContext = {}):
   // 3) Ort/Epoche lockern
   if (placeClause || eraClause) add('Ohne Ort/Epoche', join(hard, genreClause, moodClause || '', fameClause, lang));
   // 4) Bestbewertete im Genre (ergänzt die beliebtesten)
-  if (genreClause || moodClause) add('Bestbewertet', join(hard, genreClause || moodClause, placeClause, lang), 'rating', 30);
+  if (genreClause || moodClause) add('Bestbewertet', join(hard, genreClause || moodClause, placeClause, rated, lang), 'rating', 30);
   // 5) Ähnlich wie … (bei „wie <Titel>“ auch weitere Bücher derselben Autor:in)
   const refAuthor = [...(ctx.similar ?? []), ...p.similarTo].find((r) => r.authorKeys?.length)?.authorKeys?.[0];
   if (refAuthor && refAuthor !== lookupAuthor) add('Mehr von der Autor:in des Vergleichsbuchs', join(`author_key:${solrPhrase(refAuthor)}`, exclusion), 'readinglog', 15);
@@ -375,7 +383,7 @@ export function buildQueryPlans(p: DiscoveryParams, ctx: DiscoveryContext = {}):
   const soft = Boolean(genreClause || moodClause || placeClause || eraClause);
   const concrete = Boolean(text || authorClause || kw.length || ctx.lookup || ctx.similar?.length || p.similarTo.length);
   if (p.useTaste && ctx.profile && ctx.profile.querySubjects.length >= 3 && (soft || !concrete)) {
-    add('Dein Geschmack', join(or('subject', ctx.profile.querySubjects.slice(0, 6)), genreClause, placeClause, eraClause, yearClause, pagesClause, exclusion, lang), 'rating', 30);
+    add('Dein Geschmack', join(or('subject', ctx.profile.querySubjects.slice(0, 6)), genreClause, placeClause, eraClause, yearClause, pagesClause, exclusion, rated, lang), 'rating', 30);
   }
   // 8) Bei „Deutsch bevorzugt“ zusätzlich ohne Sprachfilter (englische Originale)
   const withLang = plans.find((x) => x.q.includes('language:ger'));
@@ -439,6 +447,23 @@ export function popularityLevel(book: Book): number {
   return Math.log10(1 + (book.popularity ?? 0));
 }
 
+/**
+ * Wie bekannt ist ein Buch? Kombiniert Leselisten, Bewertungen und Zahl der Ausgaben (log-skaliert):
+ * ~0 = völlig unbekannt, ~2 = solide bekannt, ~4–5 = Weltbestseller.
+ */
+export function fameScore(book: Book): number {
+  const reading = Math.log10(1 + (book.popularity ?? 0));
+  const ratings = Math.log10(1 + (book.ratingsCount ?? 0));
+  const editions = Math.log10(1 + (book.editionCount ?? 0));
+  return reading * 0.6 + ratings * 0.25 + editions * 0.35;
+}
+
+/** Bekanntheit als weiches Kriterium: −1 (obskur) … +1 (sehr bekannt); ohne Angaben (z. B. Google Books) neutral. */
+export function famePrior(book: Book): number {
+  if (book.popularity === undefined && book.ratingsCount === undefined && book.editionCount === undefined) return 0;
+  return clamp((fameScore(book) - 1.6) / 1.4, -1, 1);
+}
+
 export function bayesRating(book: Book): number | undefined {
   if (!book.rating || !book.ratingsCount) return undefined;
   const prior = 3.75;
@@ -482,7 +507,11 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     potential += 30;
     const matched = p.genres.map(genreById).filter((g) => g && genreMatches(text, g)) as NonNullable<ReturnType<typeof genreById>>[];
     if (matched.length) {
-      s += (30 + Math.min(10, (matched.length - 1) * 5)) * spec;
+      // Ein Fantasy-Roman mit einem Mord ist kein Krimi: Überwiegt ein ganz anderes Genre, zählt der Treffer halb
+      const own = Math.max(...matched.map((g) => countMatches(text, g.match)));
+      const rival = Math.max(0, ...DOMINANT_GENRES.filter((id) => !p.genres.includes(id)).map((id) => countMatches(text, genreById(id)!.match)));
+      const strength = rival > own ? 0.5 : 1;
+      s += (30 + Math.min(10, (matched.length - 1) * 5)) * spec * strength;
       for (const g of matched.slice(0, 2)) reasons.push({ kind: 'genre', label: `${g.emoji} ${g.label}` });
     } else s -= 12;
   }
@@ -596,8 +625,9 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
   }
   // Geschmacksprofil
   if (p.useTaste && ctx.profile && ctx.profile.topConcepts.length >= 3) {
-    // Bei einer konkreten Suche (Buch, Autor:in, Stichwort) entscheidet der Geschmack nur noch bei Gleichstand
-    const weight = contentCriteria ? 8 : 20;
+    // Bei einer konkreten Suche (Buch, Autor:in, Stichwort) entscheidet der Geschmack nur noch bei Gleichstand,
+    // bei gewählten Genres/Stimmungen färbt er nur – „Krimi“ soll Krimis zeigen, nicht Fantasy mit einem Mord
+    const weight = contentCriteria ? 8 : p.genres.length || p.moods.length ? 10 : 20;
     potential += weight;
     const tm = tasteMatch(ctx.profile, book);
     const t = clamp(tm.similarity / 0.3, -1, 1);
@@ -631,7 +661,14 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
   }
   // Bekanntheit
   const pop = popularityLevel(book);
-  if (p.fame) {
+  if (!p.fame) {
+    // Ohne ausdrücklichen Wunsch: Bekanntes, oft Gelesenes bevorzugen – Obskures rutscht nach hinten.
+    // Zählt nicht in die Trefferquote, wenn nichts darüber bekannt ist.
+    const prior = famePrior(book);
+    if (prior !== 0) potential += 10;
+    s += 10 * prior;
+    if (prior >= 0.9) reasons.push({ kind: 'fame', label: '🔥 viel gelesen' });
+  } else {
     potential += 10;
     const target = { '-2': 0.6, '-1': 1.3, '1': 2.4, '2': 3.1 }[String(p.fame)] ?? 2;
     const fit = 1 - Math.min(1, Math.abs(pop - target) / 1.6);

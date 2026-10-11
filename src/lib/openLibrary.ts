@@ -23,7 +23,9 @@ export type OLSort =
   | 'random'
   | 'random.hourly';
 
-const EDITION_FIELDS = ['key', 'title', 'subtitle', 'language', 'isbn', 'cover_i', 'publisher', 'publish_date'];
+const EDITION_FIELDS = ['key', 'title', 'subtitle', 'language', 'isbn', 'cover_i', 'publisher', 'publish_date', 'publish_year'];
+/** Ab diesem Jahr gilt das Cover einer deutschen Ausgabe als zeitgemäss (ältere sind oft Scans der Titelseite). */
+const FRESH_COVER_YEAR = 1990;
 
 export const SEARCH_FIELDS = [
   'key',
@@ -57,6 +59,7 @@ export interface OLEditionDoc {
   language?: string[];
   isbn?: string[];
   cover_i?: number;
+  publish_year?: number[];
   publisher?: string[];
   publish_date?: string[];
 }
@@ -151,6 +154,9 @@ export function docToBook(doc: OLSearchDoc, preferLang: LangCode = 'ger'): Book 
   const editionLangs = edition?.language ?? [];
   const useEditionTitle = Boolean(edition?.title) && (editionLangs.includes(preferLang) || editionLangs.length === 0);
   const title = useEditionTitle && edition?.title ? edition.title : doc.title;
+  // Alte deutsche Ausgaben (z. B. 1921) haben meist nur einen Scan der Titelseite – dann lieber das Hauptcover des Werks
+  const editionYear = Math.max(0, ...(edition?.publish_year ?? []));
+  const freshEditionCover = editionYear >= FRESH_COVER_YEAR || !doc.cover_i;
   const isbns = uniq((edition?.isbn ?? []).map((i) => toIsbn13(i)).filter((i): i is string => Boolean(i)));
   return {
     id: workIdFromKey(doc.key),
@@ -161,7 +167,7 @@ export function docToBook(doc: OLSearchDoc, preferLang: LangCode = 'ger'): Book 
     authors: doc.author_name ?? [],
     authorKeys: doc.author_key,
     year: doc.first_publish_year,
-    coverId: (useEditionTitle && edition?.cover_i) || doc.cover_i || edition?.cover_i,
+    coverId: (useEditionTitle && freshEditionCover ? edition?.cover_i : undefined) || doc.cover_i || edition?.cover_i,
     subjects: doc.subject ?? [],
     places: doc.place,
     times: doc.time,

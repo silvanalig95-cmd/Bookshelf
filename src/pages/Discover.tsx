@@ -56,8 +56,24 @@ function Section({ title, count, children, open = false }: { title: string; coun
   );
 }
 
-function Slider({ label, left, right, value, onChange }: { label: string; left: string; right: string; value: number; onChange: (v: number) => void }) {
-  const names = [`sehr ${left}`, left, 'egal', right, `sehr ${right}`];
+function Slider({
+  label,
+  left,
+  right,
+  middle = 'egal',
+  help,
+  value,
+  onChange,
+}: {
+  label: string;
+  left: string;
+  right: string;
+  middle?: string;
+  help?: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const names = [`sehr ${left}`, left, middle, right, `sehr ${right}`];
   return (
     <div className="slider-row" style={{ marginBottom: 14 }}>
       <div className="row between">
@@ -69,6 +85,7 @@ function Slider({ label, left, right, value, onChange }: { label: string; left: 
         <span>{left}</span>
         <span>{right}</span>
       </div>
+      {help && <span className="help">{help}</span>}
     </div>
   );
 }
@@ -377,7 +394,15 @@ export default function Discover() {
           <Section title="🎚️ Tempo, Anspruch & Bekanntheit" count={[params.tempo, params.depth, params.fame].filter(Boolean).length}>
             <Slider label="Tempo" left="ruhig" right="rasant" value={params.tempo} onChange={(v) => setParams({ tempo: v })} />
             <Slider label="Anspruch" left="leicht" right="anspruchsvoll" value={params.depth} onChange={(v) => setParams({ depth: v })} />
-            <Slider label="Bekanntheit" left="Geheimtipp" right="Bestseller" value={params.fame} onChange={(v) => setParams({ fame: v })} />
+            <Slider
+              label="Bekanntheit"
+              left="Geheimtipp"
+              right="Bestseller"
+              middle="ausgewogen"
+              help="„Ausgewogen“ bevorzugt bekannte, oft gelesene Bücher. Nach links für Unbekanntes und Geheimtipps."
+              value={params.fame}
+              onChange={(v) => setParams({ fame: v })}
+            />
           </Section>
 
           <Section title="📏 Länge" count={params.pagesMin || params.pagesMax ? 1 : 0}>

@@ -8,7 +8,7 @@
  *  - Geheimtipps: gut bewertet, aber kaum bekannt – in deinen Themen.
  *  - Über den Tellerrand: verwandte Themen, die du selten liest (Serendipität).
  */
-import { bayesRating, distinctiveSubjects, hasGerman, mergeBooks, popularityLevel } from './discovery';
+import { bayesRating, distinctiveSubjects, famePrior, hasGerman, MIN_RATINGS, mergeBooks } from './discovery';
 import { settle } from './http';
 import { docToBook, getSubject, searchWorks, subjectKey, type OLSort } from './openLibrary';
 import { conceptsOf, tasteMatch, type TasteProfile } from './profile';
@@ -49,7 +49,8 @@ export function scoreForProfile(book: Book, ctx: RecContext, extraReasons: Reaso
   const bayes = bayesRating(book) ?? 3.75;
   const quality = (bayes - 3.75) * 0.6;
   const german = hasGerman(book) ? 0.08 : 0;
-  const score = tm.similarity + quality * 0.25 + german + Math.min(0.15, tm.authorBonus * 0.04) + popularityLevel(book) * 0.01;
+  // Bekanntheit als spürbarer Zuschlag – Obskures rutscht nach hinten (ausser in „Geheimtipps“, siehe hiddenGems)
+  const score = tm.similarity + quality * 0.25 + german + Math.min(0.15, tm.authorBonus * 0.04) + famePrior(book) * 0.08;
   const reasons: Reason[] = [...extraReasons];
   if (tm.shared.length) reasons.push({ kind: 'taste', label: `💛 ${tm.shared.slice(0, 2).join(', ')}` });
   if (german) reasons.push({ kind: 'german', label: '🇩🇪 auf Deutsch' });
@@ -106,7 +107,7 @@ export async function topMatches(ctx: RecContext): Promise<RecSection | undefine
   const groups = [subjects.slice(0, 4), subjects.slice(4, 8), subjects.slice(8, 12)].filter((g) => g.length);
   const lists = await Promise.all(
     groups.flatMap((g) => [
-      query(`subject:(${g.map(solrPhrase).join(' OR ')})${langClause(ctx.language)}`, 'rating', 40),
+      query(`subject:(${g.map(solrPhrase).join(' OR ')}) ratings_count:[${MIN_RATINGS} TO *]${langClause(ctx.language)}`, 'rating', 40),
       query(`subject:(${g.map(solrPhrase).join(' OR ')})${langClause(ctx.language)}`, 'readinglog', 40),
     ]),
   );
@@ -157,7 +158,7 @@ export async function beyondTheEdge(ctx: RecContext): Promise<RecSection | undef
     .slice(0, 4)
     .map((s) => s.name);
   if (!fresh.length) return undefined;
-  const books = await query(`subject:(${fresh.map(solrPhrase).join(' OR ')})${langClause(ctx.language)}`, 'rating', 40);
+  const books = await query(`subject:(${fresh.map(solrPhrase).join(' OR ')}) ratings_count:[${MIN_RATINGS} TO *]${langClause(ctx.language)}`, 'rating', 40);
   const items = books
     .filter((b) => !ctx.readIndex.has(b))
     .map((b) => {

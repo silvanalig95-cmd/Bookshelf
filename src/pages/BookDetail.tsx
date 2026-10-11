@@ -22,6 +22,14 @@ import { useSignals } from '../store/signals';
 import { recallBook, rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
 
+/** Grob: deutscher Satz? (Der erste Satz kommt aus Open Library – oft im Original.) */
+function germanish(text: string): boolean {
+  const words = text.toLowerCase().split(/[^a-zäöüß]+/);
+  const de = words.filter((w) => ['der', 'die', 'das', 'und', 'ich', 'nicht', 'ein', 'eine', 'war', 'ist', 'mit', 'sich', 'auf', 'zu', 'er', 'sie', 'es', 'hatte'].includes(w)).length;
+  const en = words.filter((w) => ['the', 'and', 'was', 'is', 'of', 'with', 'his', 'her', 'that', 'to', 'a', 'had', 'he', 'she'].includes(w)).length;
+  return de > en;
+}
+
 interface Loaded {
   book: Book;
   work?: WorkDetails;
@@ -351,7 +359,14 @@ export default function BookDetail() {
           ) : (
             !wiki.data && !wiki.loading && <p className="muted">Für dieses Buch ist noch keine Beschreibung hinterlegt.</p>
           )}
-          {book.firstSentence && <blockquote className="first-sentence">„{book.firstSentence}“</blockquote>}
+          {book.firstSentence && (
+            <figure className="first-sentence-box">
+              <figcaption className="label">
+                So beginnt das Buch{germanish(book.firstSentence) ? '' : ' – im Original'}
+              </figcaption>
+              <blockquote className="first-sentence">„{book.firstSentence}“</blockquote>
+            </figure>
+          )}
 
           {subjects.length > 0 && (
             <div className="mt-2">
