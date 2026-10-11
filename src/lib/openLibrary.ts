@@ -130,6 +130,21 @@ export async function searchWorks(q: string, opts: SearchOptions = {}): Promise<
   return fetchJson<OLSearchResponse>(url, { ttl, signal: opts.signal });
 }
 
+export interface OLAuthorDoc {
+  key: string;
+  name: string;
+  alternate_names?: string[];
+  work_count?: number;
+  top_work?: string;
+}
+
+/** Autor:innen-Suche (findet auch Schreibvarianten wie Dostojewski/Dostoevsky). */
+export async function searchAuthors(q: string, opts: { limit?: number; signal?: AbortSignal } = {}): Promise<OLAuthorDoc[]> {
+  const params = new URLSearchParams({ q, limit: String(opts.limit ?? 5), fields: 'key,name,alternate_names,work_count,top_work' });
+  const d = await fetchJson<{ docs?: OLAuthorDoc[] }>(`${OL_BASE}/search/authors.json?${params.toString()}`, { ttl: 60 * 60_000, signal: opts.signal });
+  return d.docs ?? [];
+}
+
 /** Wandelt ein Suchergebnis in ein Buch um – bevorzugt die passende (deutsche) Ausgabe. */
 export function docToBook(doc: OLSearchDoc, preferLang: LangCode = 'ger'): Book {
   const edition = doc.editions?.docs?.[0];

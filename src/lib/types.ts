@@ -146,4 +146,6 @@ export interface ScoredBook {
   match: number;
   reasons: Reason[];
   alreadyRead?: boolean;
+  /** Erfüllt keine der konkreten Angaben (Stichwort, Autor:in, Vergleichsbuch). */
+  weak?: boolean;
 }

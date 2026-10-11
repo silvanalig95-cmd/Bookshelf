@@ -109,7 +109,7 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 3, i
               .filter((r) => r.kind !== 'ai')
               .slice(0, maxReasons)
               .map((r) => (
-              <span key={r.label} className={`tag ${r.kind === 'taste' ? 'gold' : r.kind === 'german' ? 'teal' : r.kind === 'ai' ? 'violet' : r.kind === 'fame' ? 'rose' : ''}`}>
+              <span key={r.label} title={r.label} className={`tag ${r.kind === 'taste' ? 'gold' : r.kind === 'german' ? 'teal' : r.kind === 'ai' ? 'violet' : r.kind === 'fame' ? 'rose' : ''}`}>
                 {r.label}
               </span>
             ))}

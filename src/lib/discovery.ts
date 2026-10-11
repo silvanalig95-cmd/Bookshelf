@@ -5,6 +5,7 @@
  */
 import { searchGoogleBooks } from './googleBooks';
 import { settle } from './http';
+import type { WishLookup } from './lookup';
 import { docToBook, searchWorks, type OLSort } from './openLibrary';
 import { tasteMatch, type TasteProfile } from './profile';
 import { conceptsOf } from './profile';
@@ -29,6 +30,7 @@ export interface SimilarRef {
   id: string;
   title: string;
   authors: string[];
+  authorKeys?: string[];
   subjects: string[];
 }
 
@@ -107,6 +109,10 @@ export interface WishInterpretation {
   similarTitles: string[];
   excludeWords: string[];
   excludeGenres: string[];
+  /** Im Wunsch erkanntes Buch bzw. erkannte Autor:in (siehe lookup.ts). */
+  found?: { title?: string; author?: string };
+  /** Ausdrücklich ein Roman / eine Erzählung gewünscht – Sachbücher passen dann nicht. */
+  fiction?: boolean;
 }
 
 /** Auslöser-Wörter (normalisiert, Präfix-Abgleich) → Kategorie. */
@@ -207,6 +213,8 @@ export function interpretWish(wish: string): WishInterpretation {
     if (entry.place) result.places.push(entry.place);
     if (entry.era) result.eras.push(entry.era);
   }
+  // „Roman“, „Liebesroman“, „Novelle“, „novel“ … → nur Belletristik
+  if (/(roman|romane|novelle|novellen|erzahlung|erzahlungen)\b|\bnovels?\b/.test(text)) result.fiction = true;
   if (includesAny(text, SHORT_WORDS)) result.pagesMax = 280;
   if (includesAny(text, LONG_WORDS)) result.pagesMin = 450;
   if (includesAny(text, HIDDEN_WORDS)) result.fame = -2;
@@ -250,8 +258,12 @@ export interface DiscoveryContext {
   wish?: WishInterpretation;
   /** Aufgelöste Vergleichsbücher (aus `similarTo` und Wunsch-Titeln). */
   similar?: SimilarRef[];
+  /** Im Wunsch erkanntes Buch / erkannte Autor:in. */
+  lookup?: WishLookup;
   googleApiKey?: string;
   region?: string;
+  /** Bücher, die eine Anfrage mit dem Suchtext / der genannten Autor:in geliefert hat. */
+  directIds?: Set<string>;
 }
 
 /** Vereinigt die expliziten Parameter mit dem interpretierten Wunsch. */
@@ -337,15 +349,21 @@ export function buildQueryPlans(p: DiscoveryParams, ctx: DiscoveryContext = {}):
     if (q.trim() && !plans.some((x) => x.q === q && x.sort === sort)) plans.push({ label, q, sort, limit });
   };
 
-  // 1) Alles zusammen
-  add('Alle Kriterien', join(hard, genreClause, moodClause, placeClause, eraClause, fameClause, lang));
+  // 0) Genannte Autor:in bzw. Autor:in des genannten Buchs
+  const lookupAuthor = ctx.lookup?.author?.key ?? ctx.lookup?.book?.authorKeys?.[0];
+  if (lookupAuthor) add('Mehr von dieser Autor:in', join(`author_key:${solrPhrase(lookupAuthor)}`, exclusion), 'readinglog', 30);
+  // 1) Alles zusammen – aber nie nur „irgendwas auf Deutsch“
+  const core = join(hard, genreClause, moodClause, placeClause, eraClause, fameClause);
+  if (core) add('Alle Kriterien', join(core, lang));
   // 2) Stimmungen nur weich werten
   if (moodClause) add('Genre & Rahmen', join(hard, genreClause, placeClause, eraClause, fameClause, lang));
   // 3) Ort/Epoche lockern
   if (placeClause || eraClause) add('Ohne Ort/Epoche', join(hard, genreClause, moodClause || '', fameClause, lang));
   // 4) Bestbewertete im Genre (ergänzt die beliebtesten)
   if (genreClause || moodClause) add('Bestbewertet', join(hard, genreClause || moodClause, placeClause, lang), 'rating', 30);
-  // 5) Ähnlich wie …
+  // 5) Ähnlich wie … (bei „wie <Titel>“ auch weitere Bücher derselben Autor:in)
+  const refAuthor = [...(ctx.similar ?? []), ...p.similarTo].find((r) => r.authorKeys?.length)?.authorKeys?.[0];
+  if (refAuthor && refAuthor !== lookupAuthor) add('Mehr von der Autor:in des Vergleichsbuchs', join(`author_key:${solrPhrase(refAuthor)}`, exclusion), 'readinglog', 15);
   for (const ref of [...(ctx.similar ?? []), ...p.similarTo].slice(0, 3)) {
     const subjects = distinctiveSubjects(ref.subjects, 5);
     if (subjects.length) add(`Ähnlich wie ${ref.title}`, join(or('subject', subjects), yearClause, pagesClause, exclusion, lang), 'readinglog', 30);
@@ -353,12 +371,15 @@ export function buildQueryPlans(p: DiscoveryParams, ctx: DiscoveryContext = {}):
   // 6) Wunsch-Stichwörter
   const kw = ctx.wish?.keywords ?? [];
   if (kw.length) add('Dein Wunsch', join(`(${kw.map((k) => textTerms(k)).filter(Boolean).join(' OR ')})`, genreClause, placeClause, yearClause, exclusion, lang), 'relevance', 30);
-  // 7) Dein Geschmack
-  if (p.useTaste && ctx.profile && ctx.profile.querySubjects.length >= 3) {
+  // 7) Dein Geschmack – nur, wenn die Suche Spielraum lässt (Genre, Stimmung …), nicht bei einem konkreten Buch oder Stichwort
+  const soft = Boolean(genreClause || moodClause || placeClause || eraClause);
+  const concrete = Boolean(text || authorClause || kw.length || ctx.lookup || ctx.similar?.length || p.similarTo.length);
+  if (p.useTaste && ctx.profile && ctx.profile.querySubjects.length >= 3 && (soft || !concrete)) {
     add('Dein Geschmack', join(or('subject', ctx.profile.querySubjects.slice(0, 6)), genreClause, placeClause, eraClause, yearClause, pagesClause, exclusion, lang), 'rating', 30);
   }
   // 8) Bei „Deutsch bevorzugt“ zusätzlich ohne Sprachfilter (englische Originale)
-  if (p.language === 'de-first' && plans.length) add('Auch ohne deutsche Ausgabe', plans[0].q.replace(/\s*language:ger/, ''), popularSort, 25);
+  const withLang = plans.find((x) => x.q.includes('language:ger'));
+  if (p.language === 'de-first' && withLang) add('Auch ohne deutsche Ausgabe', withLang.q.replace(/\s*language:ger/, '').trim(), popularSort, 25);
 
   // Fallback: gar keine Kriterien → beliebte deutsche Bücher
   if (!plans.length) add('Beliebt', join('language:ger', exclusion), 'trending', 40);
@@ -379,6 +400,20 @@ const TEMPO_FAST = ['thriller*', 'suspense', 'action', 'adventure*', 'chase', 'c
 const TEMPO_SLOW = ['literary', 'philosoph*', 'nature', 'family', 'families', 'domestic fiction', 'memory', 'poetry', 'country life'];
 const DEPTH_HIGH = ['classic*', 'literary', 'philosoph*', 'nobel', 'existential*', 'modernism', 'experimental', 'psychological fiction'];
 const DEPTH_LOW = ['young adult', 'juvenile', 'humor*', 'romance', 'chick lit', 'cozy', 'children*', 'teenage*'];
+
+const FICTION_MARK =
+  /\b(fiction|novels?|romane?(?! (?:empire|history|law|art|antiquities|period|catholic|republic|emperors|britain))|novellen?|erzahlung(?:en)?|short stories|stories|tales|marchen|fairy tales|belletristik|drama|plays|poetry|gedichte|lyrik|kriminalroman)\b/;
+const NONFICTION_MARK =
+  /\b(biograph|autobiograph|memoir|history\b|politic|government|foreign relations|international relations|national socialism|nationalsozialismus|sociolog|economic|nonfiction|sachbuch|essays|congresses|exhibitions|catalogs|textbooks|study and teaching|dictionaries|handbooks|guidebooks|description and travel|antiquities|statistics)/;
+
+/** Roman oder Sachbuch? Nur aus den Schlagwörtern – Klappentexte erzählen auch bei Sachbüchern „Geschichten“. */
+export function bookKind(book: Book): 'fiction' | 'nonfiction' | 'unknown' {
+  const subjects = normalize(book.subjects.join(' | '));
+  if (!subjects) return 'unknown';
+  if (FICTION_MARK.test(subjects)) return 'fiction';
+  if (NONFICTION_MARK.test(subjects)) return 'nonfiction';
+  return 'unknown';
+}
 
 export function bookText(book: Book): string {
   return normalize(
@@ -432,6 +467,11 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
   if (alreadyRead && p.hideRead) return undefined;
   const german = hasGerman(book);
   if (p.language === 'de-only' && !german) return undefined;
+  // „Deutsch bevorzugt, sonst Englisch“: Werke nur auf Italienisch, Türkisch … helfen nicht weiter
+  if (p.language === 'de-first' && !german && book.languages.length && !book.languages.includes('eng')) return undefined;
+  const kind = bookKind(book);
+  const wantsNonfiction = p.genres.some((id) => genreById(id)?.group === 'nonfiction');
+  if (ctx.wish?.fiction && !wantsNonfiction && kind === 'nonfiction') return undefined;
   const bayes = bayesRating(book);
   if (p.minRating && book.rating && (book.ratingsCount ?? 0) >= 5 && book.rating < p.minRating) return undefined;
   if (p.yearFrom && book.year && book.year < p.yearFrom - 1) return undefined;
@@ -484,21 +524,46 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
       reasons.push({ kind: 'character', label: `🎭 ${p.character}` });
     }
   }
+  // Konkrete Angaben (Stichwörter, Autor:in, Vergleichsbuch): Wer keine davon erfüllt, ist kein guter Treffer –
+  // egal wie gut Geschmack oder Bewertung passen.
+  let contentCriteria = false;
+  let contentHit = false;
   // Autor:in
   if (p.author.trim()) {
     potential += 20;
+    contentCriteria = true;
     const a = normalize(p.author);
     if (book.authors.some((x) => normalize(x).includes(a))) {
       s += 20;
+      contentHit = true;
       reasons.push({ kind: 'author', label: `✍️ ${book.authors[0]}` });
     }
   }
+  // Im Wunsch genannte Autor:in (oder Autor:in des genannten Buchs)
+  const lookupAuthor = ctx.lookup?.author?.key ?? ctx.lookup?.book?.authorKeys?.[0];
+  if (lookupAuthor) {
+    const named = Boolean(ctx.lookup?.author);
+    if (named) {
+      potential += 20;
+      contentCriteria = true;
+    }
+    if (book.authorKeys?.includes(lookupAuthor)) {
+      s += named ? 20 : 8;
+      contentHit = true;
+      reasons.push({ kind: 'author', label: `✍️ ${ctx.wish?.found?.author ?? 'gleiche Autor:in'}` });
+    }
+  }
   // Stichwörter
-  const keywords = uniq([...contentWords(p.text), ...(ctx.wish?.keywords ?? [])]).slice(0, 6);
+  const explained = new Set(ctx.lookup?.consumed ?? []);
+  const keywords = uniq([...contentWords(p.text), ...(ctx.wish?.keywords ?? [])])
+    .filter((k) => !explained.has(k))
+    .slice(0, 6);
   for (const k of keywords) {
     potential += 8;
+    contentCriteria = true;
     if (new RegExp(`\\b${k}`).test(text)) {
       s += 8 * spec;
+      contentHit = true;
       if (reasons.filter((r) => r.kind === 'keyword').length < 2) reasons.push({ kind: 'keyword', label: `„${k}“` });
     }
   }
@@ -511,24 +576,32 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
     let bestRef: SimilarRef | undefined;
     for (const ref of refs) {
       if (ref.id === book.id || bookFingerprint(ref.title, ref.authors) === bookFingerprint(book.title, book.authors)) return undefined;
+      // Zu einem Roman passt kein Sachbuch über dieselbe Zeit („Schachnovelle“ ≠ Geschichtsbuch über den Nationalsozialismus)
+      const refKind = bookKind({ subjects: ref.subjects } as Book);
       const refConcepts = conceptsOf(ref.subjects);
       const overlap = refConcepts.filter((c) => bookConcepts.has(c)).length;
       let v = Math.min(1, overlap / 4);
-      if (ref.authors.some((a) => book.authors.includes(a))) v = Math.max(v, 0.6);
+      const sameAuthor = ref.authors.some((a) => book.authors.includes(a)) || Boolean(ref.authorKeys?.some((k) => book.authorKeys?.includes(k)));
+      if (refKind === 'fiction' && kind === 'nonfiction' && !sameAuthor) v *= 0.25;
+      if (sameAuthor) v = Math.max(v, 0.6);
       if (v > best) {
         best = v;
         bestRef = ref;
       }
     }
     s += 25 * best;
+    contentCriteria = true;
+    if (best >= 0.4) contentHit = true;
     if (bestRef && best >= 0.4) reasons.push({ kind: 'similar', label: `≈ ${bestRef.title}` });
   }
   // Geschmacksprofil
   if (p.useTaste && ctx.profile && ctx.profile.topConcepts.length >= 3) {
-    potential += 20;
+    // Bei einer konkreten Suche (Buch, Autor:in, Stichwort) entscheidet der Geschmack nur noch bei Gleichstand
+    const weight = contentCriteria ? 8 : 20;
+    potential += weight;
     const tm = tasteMatch(ctx.profile, book);
     const t = clamp(tm.similarity / 0.3, -1, 1);
-    s += 20 * t;
+    s += weight * t;
     bonus += Math.min(8, tm.authorBonus * 2);
     if (t > 0.35 && tm.shared.length) reasons.push({ kind: 'taste', label: `💛 dein Geschmack: ${tm.shared.slice(0, 2).join(', ')}` });
     else if (tm.authorBonus > 1) reasons.push({ kind: 'taste', label: `💛 ${book.authors[0]} magst du` });
@@ -593,14 +666,19 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
   if (!book.subjects.length && !book.description) bonus -= 4;
   bonus += Math.min(4, pop); // leichte Bevorzugung bekannterer Werke bei Gleichstand
 
+  // Direkt über den Suchtext gefundene Bücher erfüllen ihn, auch wenn das Wort nicht in den Schlagwörtern steht
+  if (ctx.directIds?.has(book.id)) contentHit = true;
+  const missesEverything = contentCriteria && !contentHit;
+  if (missesEverything) s -= potential * 0.35;
+
   let match: number;
   if (potential > 0) {
     // Trefferquote nur aus den Kriterien – Bewertung/Beliebtheit fliessen leicht ein
-    match = Math.round(clamp(25 + (70 * s) / potential + bonus * 0.25, 3, 99));
+    match = Math.round(clamp(25 + (70 * s) / potential + bonus * 0.25, 3, missesEverything ? 30 : 99));
   } else {
     match = Math.round(clamp(62 + ((bayes ?? 3.75) - 3.75) * 25 + pop * 4, 35, 96));
   }
-  return { book, score: s + bonus, match, reasons: dedupeReasons(reasons), alreadyRead };
+  return { book, score: s + bonus - (missesEverything ? 1000 : 0), match, reasons: dedupeReasons(reasons), alreadyRead, weak: missesEverything || undefined };
 }
 
 function dedupeReasons(reasons: Reason[]): Reason[] {
@@ -655,6 +733,20 @@ function combine(a: Book, b: Book): Book {
 /* Ausführen                                                             */
 /* ------------------------------------------------------------------ */
 
+const LATIN = /^[\p{Script=Latin}\p{P}\s]+$/u;
+
+/** „Фёдор Достоевский“, „Fiódor Dostoievski“ … → einheitlich so, wie die Person den Namen geschrieben hat (nur für die gesuchte Autor:in). */
+function withReadableAuthor(book: Book, ctx: DiscoveryContext): Book {
+  const key = ctx.lookup?.author?.key ?? ctx.lookup?.book?.authorKeys?.[0];
+  const name = ctx.wish?.found?.author;
+  if (!key || !name || !LATIN.test(name) || !book.authorKeys) return book;
+  const i = book.authorKeys.indexOf(key);
+  if (i < 0 || !book.authors[i] || book.authors[i] === name) return book;
+  const authors = [...book.authors];
+  authors[i] = name;
+  return { ...book, authors };
+}
+
 export interface DiscoveryResult {
   results: ScoredBook[];
   plans: QueryPlan[];
@@ -671,6 +763,8 @@ export async function runDiscovery(
 ): Promise<DiscoveryResult> {
   const p = effectiveParams(params, ctx.wish);
   const plans = buildQueryPlans(p, ctx);
+  // Treffer einer Anfrage mit dem Suchtext erfüllen ihn (Autor:innen zählen über ihren Schlüssel, siehe scoreBook)
+  const isDirect = (plan: QueryPlan) => Boolean(p.text.trim() && plan.q.includes(textTerms(p.text)));
   const responses = await Promise.all(
     plans.map((plan) =>
       settle(
@@ -692,9 +786,25 @@ export async function runDiscovery(
     }
   }
 
-  const merged = mergeBooks(lists);
-  const scored = merged.map((b) => scoreBook(b, p, ctx)).filter((x): x is ScoredBook => Boolean(x));
+  const directIds = new Set(plans.flatMap((plan, i) => (isDirect(plan) ? lists[i].map((b) => b.id) : [])));
+  const wanted = page === 0 ? ctx.lookup?.book : undefined;
+  if (wanted) lists.unshift([wanted]);
+  const merged = mergeBooks(lists).map((b) => withReadableAuthor(b, ctx));
+  const pinned = wanted && merged.find((b) => b.id === wanted.id);
+  const scoringCtx = { ...ctx, directIds };
+  let scored = merged
+    .filter((b) => b !== pinned)
+    .map((b) => scoreBook(b, p, scoringCtx))
+    .filter((x): x is ScoredBook => Boolean(x));
+  // Bücher, die nichts von dem erfüllen, wonach konkret gefragt wurde, nur zeigen, wenn es sonst gar nichts gibt
+  if (pinned || scored.some((r) => !r.weak)) scored = scored.filter((r) => !r.weak);
   sortResults(scored, p.sort);
+  // Das ausdrücklich gesuchte Buch steht immer zuerst – auch wenn es schon gelesen ist
+  if (pinned) {
+    const reasons: Reason[] = [{ kind: 'keyword', label: '🎯 Dein gesuchtes Buch' }];
+    if (hasGerman(pinned)) reasons.push({ kind: 'german', label: '🇩🇪 auf Deutsch' });
+    scored.unshift({ book: pinned, score: Number.MAX_SAFE_INTEGER, match: 99, reasons, alreadyRead: ctx.readIndex?.has(pinned) ?? false });
+  }
   const total = Math.max(0, ...responses.map((r) => r?.total ?? 0));
   return { results: scored, plans, total, candidates: merged.length };
 }
@@ -738,7 +848,7 @@ function buildGoogleQuery(p: DiscoveryParams, ctx: DiscoveryContext): string {
 }
 
 /** Findet zu einem normalisierten Stichwort die ursprüngliche Schreibweise im Text. */
-function originalWord(text: string, normalized: string): string {
+export function originalWord(text: string, normalized: string): string {
   for (const token of text.split(/[\s,.;:!?„“"()]+/)) if (normalize(token) === normalized) return token;
   return normalized;
 }
@@ -747,6 +857,8 @@ function originalWord(text: string, normalized: string): string {
 export function describeSearch(params: DiscoveryParams, wish?: WishInterpretation): string[] {
   const p = effectiveParams(params, wish);
   const bits: string[] = [];
+  if (wish?.found?.title) bits.push(`📖 „${wish.found.title}“ und Ähnliches`);
+  if (wish?.found?.author) bits.push(`✍️ ${wish.found.title ? 'mehr von ' : ''}${wish.found.author}`);
   const genres = p.genres.map((id) => genreById(id)).filter(Boolean).map((g) => `${g!.emoji} ${g!.label}`);
   if (genres.length) bits.push(genres.join(' oder '));
   const moods = p.moods.map((id) => moodById(id)?.label).filter(Boolean) as string[];

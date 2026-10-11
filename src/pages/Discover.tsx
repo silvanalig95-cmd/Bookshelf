@@ -13,11 +13,11 @@ import {
   runDiscovery,
   type DiscoveryParams,
   type DiscoverySort,
-  type SimilarRef,
 } from '../lib/discovery';
 import { errorMessage, useDebounced, useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { getBookByWorkId } from '../lib/openLibrary';
 import { resolveBook } from '../lib/resolve';
+import { toRef, understandWish } from '../lib/wish';
 import { ERAS, GENRES, MOODS, PLACES } from '../lib/taxonomy';
 import { pickRandom, shuffle, uniqBy } from '../lib/text';
 import type { Book, ScoredBook } from '../lib/types';
@@ -41,9 +41,6 @@ const YEAR_PRESETS = [
   { id: 'alt', label: '🎩 Vor 1945', from: undefined, to: 1944 },
 ] as const;
 
-function toRef(book: Book): SimilarRef {
-  return { id: book.id, title: book.title, authors: book.authors.slice(0, 2), subjects: book.subjects.slice(0, 40) };
-}
 
 function Section({ title, count, children, open = false }: { title: string; count?: number; children: ReactNode; open?: boolean }) {
   return (
@@ -169,15 +166,10 @@ export default function Discover() {
       setError('');
       try {
         const p = useDiscover.getState().params;
-        const interp = p.wish.trim() ? interpretWish(p.wish) : undefined;
-        const similar: SimilarRef[] = [];
-        for (const t of interp?.similarTitles.slice(0, 2) ?? []) {
-          const b = await resolveBook(t, '', controller.signal).catch(() => undefined);
-          if (b) similar.push(toRef(b));
-        }
+        const { wish: interp, similar, lookup } = await understandWish(p, controller.signal);
         const res = await runDiscovery(
           p,
-          { profile: hasProfile ? profile : undefined, readIndex, wish: interp, similar, googleApiKey: settings.googleApiKey, region: settings.region },
+          { profile: hasProfile ? profile : undefined, readIndex, wish: interp, similar, lookup, googleApiKey: settings.googleApiKey, region: settings.region },
           pageNum,
           controller.signal,
         );

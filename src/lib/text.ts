@@ -52,6 +52,28 @@ export function contentWords(input: string): string[] {
     .filter((w) => w.length > 2 && !STOPWORDS.has(w));
 }
 
+/** Editierdistanz (Levenshtein) – für Schreibvarianten wie „Dostojewski“/„Dostoevsky“. */
+export function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Ähnlich genug geschrieben? Kurze Wörter müssen exakt passen, lange dürfen leicht abweichen. */
+export function similarWord(a: string, b: string): boolean {
+  if (a === b) return true;
+  const len = Math.min(a.length, b.length);
+  if (len < 5) return false;
+  return editDistance(a, b) <= (len >= 9 ? 3 : len >= 7 ? 2 : 1);
+}
+
 export function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   const cut = text.slice(0, max);

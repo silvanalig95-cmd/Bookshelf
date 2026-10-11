@@ -964,6 +964,13 @@ textarea {
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 4px;
+  min-width: 0;
+}
+.book-card .reasons .tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .book-card .card-actions {
   position: absolute;
