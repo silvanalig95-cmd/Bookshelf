@@ -455,7 +455,7 @@ function SyncCard() {
     <section className="card" id="abgleich">
       <h3>Geräte abgleichen</h3>
       <p className="small">
-        Bibliothek, Bewertungen, Merkliste, Swipe-Geschmack und die Einstellungen oben sind auf allen Geräten gleich, die diesen Lesekompass öffnen – auf dem
+        Bibliothek, Bewertungen, Merkliste, Stapel-Geschmack und die Einstellungen oben sind auf allen Geräten gleich, die diesen Lesekompass öffnen – auf dem
         Handy gemerkt, am PC gefunden. Änderungen gehen sofort raus; offline Gemachtes wird nachgereicht.
       </p>
       <div className={`notice ${status.tone}`} style={{ marginBottom: 12 }}>
@@ -463,7 +463,7 @@ function SyncCard() {
       </div>
       {c && on && (
         <p className="small muted">
-          Auf dem Server: {c.library} {c.library === 1 ? 'Buch' : 'Bücher'} · {c.wishlist} auf der Merkliste · {c.signals} Swipe-Signal{c.signals === 1 ? '' : 'e'}
+          Auf dem Server: {c.library} {c.library === 1 ? 'Buch' : 'Bücher'} · {c.wishlist} auf der Merkliste · {c.signals} Stapel-Entscheidung{c.signals === 1 ? '' : 'en'}
         </p>
       )}
       <label className="toggle" style={{ marginBottom: 12 }}>

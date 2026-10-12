@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ageWeight, buildQueryPlans, DEFAULT_PARAMS, ERAS, famePrior, fameScore, scoreBook } from '../src/lib/discovery';
+import { ageWeight, buildQueryPlans, DEFAULT_PARAMS, discoveryPrior, ERAS, famePrior, fameScore, scoreBook } from '../src/lib/discovery';
 import { docToBook } from '../src/lib/openLibrary';
 import { book } from './helpers';
 
@@ -20,7 +20,18 @@ describe('Bekanntheit', () => {
     const unknown = scoreBook(obscure, params)!;
     expect(known.score).toBeGreaterThan(unknown.score + 10);
     expect(known.match).toBeGreaterThan(unknown.match);
-    expect(known.reasons.map((r) => r.label)).toContain('viel gelesen');
+    expect(known.reasons.map((r) => r.label)).toContain('Bestseller');
+  });
+
+  it('stellt gut gelesene, aber nicht riesige Bücher vor die Welt-Bestseller', () => {
+    const solid = book({ id: 's', title: 'Gut gelesen', subjects: ['Detective and mystery stories', 'Police'], languages: ['ger'], popularity: 400, ratingsCount: 60, editionCount: 20, rating: 4.1, coverId: 3 });
+    const mega = book({ id: 'm', title: 'Welt-Bestseller', subjects: ['Detective and mystery stories', 'Police'], languages: ['ger'], popularity: 60000, ratingsCount: 4000, editionCount: 400, rating: 4.1, coverId: 4 });
+    expect(discoveryPrior(solid)).toBe(1);
+    expect(discoveryPrior(mega)).toBeLessThan(0.2);
+    expect(discoveryPrior(obscure)).toBeLessThan(-0.5);
+    const params = { ...DEFAULT_PARAMS, genres: ['krimi'] };
+    expect(scoreBook(solid, params)!.score).toBeGreaterThan(scoreBook(mega, params)!.score);
+    expect(scoreBook(mega, params)!.score).toBeGreaterThan(scoreBook(obscure, params)!.score);
   });
 
   it('dreht das bei „Geheimtipp“ um', () => {

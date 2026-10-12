@@ -465,6 +465,25 @@ export function famePrior(book: Book): number {
   return clamp((fameScore(book) - 1.6) / 1.4, -1, 1);
 }
 
+/**
+ * Bekanntheit für Entdeckungen (Standard): gesucht sind Bücher, die bekannt genug sind, um gut zu
+ * sein, aber nicht die allerbekanntesten. Obskures (kaum gelesen) fällt deutlich zurück, Bekanntes
+ * steht vorn, und die ganz grossen Bestseller rutschen leicht nach hinten – die kennt man ohnehin.
+ *   Bekanntheit < 1.6 → negativ · 2.4–3.3 → +1 · darüber sanft abnehmend (Harry Potter ≈ −0.2)
+ */
+export function discoveryPrior(book: Book): number {
+  if (book.popularity === undefined && book.ratingsCount === undefined && book.editionCount === undefined) return 0;
+  const fame = fameScore(book);
+  if (fame < 2.4) return clamp((fame - 1.6) / 0.8, -1, 1);
+  if (fame <= 3.3) return 1;
+  return Math.max(-0.5, 1 - (fame - 3.3) * 1.1);
+}
+
+/** Zählt zu den allerbekanntesten Büchern (Welt-Bestseller, Schullektüre). */
+export function isMegaFamous(book: Book): boolean {
+  return fameScore(book) >= 3.7;
+}
+
 /** Genres, bei denen ältere Bücher meist nur als Klassiker interessant sind. */
 const AGING_GENRES = ['krimi', 'thriller', 'fantasy', 'scifi', 'dystopie', 'horror', 'liebe', 'humor', 'abenteuer', 'jugend', 'kinder', 'comic', 'spionage', 'krieg', 'historisch', 'familie'];
 /** Ab diesem Alter verliert ein Genre-Buch an Gewicht, ab AGE_FULL zählt es nur noch als Klassiker. */
@@ -691,12 +710,13 @@ export function scoreBook(book: Book, p: DiscoveryParams, ctx: DiscoveryContext 
   // Bekanntheit
   const pop = popularityLevel(book);
   if (!p.fame) {
-    // Ohne ausdrücklichen Wunsch: Bekanntes, oft Gelesenes bevorzugen – Obskures rutscht nach hinten.
-    // Zählt nicht in die Trefferquote, wenn nichts darüber bekannt ist.
-    const prior = famePrior(book);
+    // Ohne ausdrücklichen Wunsch: bekannte, gut gelesene Bücher vor Obskurem – die ganz grossen
+    // Bestseller aber nicht zuoberst, die kennt man meist schon. Zählt nicht in die Trefferquote,
+    // wenn nichts über die Bekanntheit bekannt ist.
+    const prior = discoveryPrior(book);
     if (prior !== 0) potential += 10;
     s += 10 * prior;
-    if (prior >= 0.9) reasons.push({ kind: 'fame', label: 'viel gelesen' });
+    if (isMegaFamous(book)) reasons.push({ kind: 'fame', label: 'Bestseller' });
   } else {
     potential += 10;
     const target = { '-2': 0.6, '-1': 1.3, '1': 2.4, '2': 3.1 }[String(p.fame)] ?? 2;

@@ -206,9 +206,9 @@ function Wishlist() {
   if (!list.length) {
     return (
       <Empty title="Deine Merkliste ist leer">
-        <p>Tippe auf ♡ bei einem Buch, um es dir zu merken – beim Entdecken, Swipen oder am Glücksrad.</p>
+        <p>Tippe auf ♡ bei einem Buch, um es dir zu merken – beim Entdecken, im Bücher-Stapel oder am Glücksrad.</p>
         <Link to="/swipe" className="btn btn-primary">
-          Swipe starten
+          Bücher-Stapel
         </Link>
       </Empty>
     );
@@ -622,7 +622,7 @@ function ImportPanel() {
         <p className="small">
           {synced
             ? 'Dank Geräte-Abgleich haben alle deine Geräte denselben Stand – die Datei ist eine zusätzliche Sicherung. Zurückspielen ersetzt den Stand auf allen Geräten.'
-            : 'Bibliothek, Merkliste und Swipe-Geschmack als Datei sichern – z. B. um auf ein anderes Gerät umzuziehen.'}{' '}
+            : 'Bibliothek, Merkliste und Stapel-Geschmack als Datei sichern – z. B. um auf ein anderes Gerät umzuziehen.'}{' '}
           API-Schlüssel werden nicht exportiert.
         </p>
         <div className="btn-row">
@@ -660,13 +660,13 @@ function DangerZone({ onClearLibrary, everywhere }: { onClearLibrary: () => void
       <button
         className="btn btn-sm btn-ghost"
         onClick={() => {
-          if (confirm(`Swipe- und Glücksrad-Geschmack zurücksetzen?${where}`)) {
+          if (confirm(`Geschmack aus Bücher-Stapel und Glücksrad zurücksetzen?${where}`)) {
             clearSignals();
             toast('Geschmackssignale zurückgesetzt');
           }
         }}
       >
-        Swipe-Geschmack zurücksetzen
+        Stapel-Geschmack zurücksetzen
       </button>
     </div>
   );

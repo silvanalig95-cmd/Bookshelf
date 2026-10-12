@@ -4,11 +4,10 @@ import { BookRow } from '../components/BookCard';
 import { SkeletonGrid } from '../components/Feedback';
 import { Icon } from '../components/Icon';
 import { useAsync, useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
-import { docToBook, searchWorks } from '../lib/openLibrary';
+import { discoveryPool, newReleasesPool, rankForHome, tastePool } from '../lib/homeFeed';
 import { isProfileUsable } from '../lib/profile';
-import { scoreForProfile } from '../lib/recommend';
 import { MOODS } from '../lib/taxonomy';
-import { solrPhrase } from '../lib/text';
+import { impressionsReady, staleness } from '../store/impressions';
 import { useSettings } from '../store/settings';
 import { useWishlist } from '../store/wishlist';
 
@@ -28,7 +27,7 @@ const MODES = [
   { to: '/fuer-dich', title: 'Für dich', text: 'Empfehlungen aus deinen gelesenen Büchern und Bewertungen.' },
   { to: '/bibliothekar', title: 'KI-Bibliothekar', text: 'Erzähl, worauf du Lust hast – die KI kennt deine Bücher.' },
   { to: '/bibliothek', title: 'Bibliothek & Lese-DNA', text: 'Goodreads verbinden, Merkliste und Lesestatistik.' },
-  { to: '/swipe', title: 'Bücher-Swipe', text: 'Wischen – der Stapel lernt deinen Geschmack.' },
+  { to: '/swipe', title: 'Bücher-Stapel', text: 'Spannend, merken oder weiter – der Stapel lernt deinen Geschmack.' },
   { to: '/gluecksrad', title: 'Glücksrad & Blind Date', text: 'Bücher erst über ihren ersten Satz kennenlernen.' },
   { to: '/orakel', title: 'Lese-Orakel', text: 'Sieben Fragen zur heutigen Lesestimmung.' },
   { to: '/themen', title: 'Themen-Netz', text: 'Von Thema zu Thema neue Welten finden.' },
@@ -58,27 +57,25 @@ export default function Home() {
   );
   const usable = isProfileUsable(profile);
 
-  const popular = useAsync(
+  // Alle Reihen auf einmal berechnen: so bleibt die Startseite stabil, solange du sie ansiehst
+  const rows = useAsync(
     async (signal) => {
-      const res = await searchWorks('language:ger first_publish_year:[2015 TO *]', { sort: 'trending', limit: 24, lang: 'de', signal });
-      return res.docs.map((d) => docToBook(d)).filter((b) => !readIndex.has(b));
+      const subjects = usable && profile ? profile.querySubjects.slice(0, 6) : [];
+      const [taste, discover, fresh] = await Promise.all([
+        tastePool(subjects, language, signal),
+        discoveryPool(language, signal),
+        newReleasesPool(language, signal),
+        impressionsReady(),
+      ]);
+      const ctx = { profile: usable ? profile : undefined, readIndex, language, staleness: (id: string) => staleness(id) };
+      const forYou = usable ? rankForHome([...taste, ...discover], { ...ctx, minRating: 3.75 }) : [];
+      const shown = new Set(forYou.map((s) => s.book.id));
+      const discoveries = rankForHome(discover, { ...ctx, exclude: shown, minRating: 3.8 });
+      for (const s of discoveries) shown.add(s.book.id);
+      const newest = rankForHome(fresh, { ...ctx, exclude: shown, max: 14 });
+      return { forYou, discoveries, newest };
     },
-    [],
-  );
-
-  const forYou = useAsync(
-    async (signal) => {
-      if (!usable || !profile) return [];
-      const subjects = profile.querySubjects.slice(0, 5);
-      const lang = language === 'any' ? '' : ' language:ger';
-      const res = await searchWorks(`subject:(${subjects.map(solrPhrase).join(' OR ')})${lang}`, { sort: 'rating', limit: 40, lang: 'de', signal });
-      return res.docs
-        .map((d) => scoreForProfile(docToBook(d), { profile, readIndex, language }))
-        .filter((x): x is NonNullable<typeof x> => Boolean(x))
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 16);
-    },
-    [usable, profile?.querySubjects.join('|')],
+    [usable, profile?.querySubjects.join('|'), language],
   );
 
   const submit = (e: React.FormEvent) => {
@@ -116,53 +113,46 @@ export default function Home() {
         </div>
       </section>
 
-      <div className="mode-grid">
-        {MODES.map((m) => (
-          <Link key={m.to} to={m.to} className="mode-tile">
-            <h3>{m.title}</h3>
-            <p>{m.text}</p>
-          </Link>
-        ))}
-      </div>
-
       {usable ? (
-        forYou.loading ? (
+        rows.loading ? (
           <section className="shelf-row">
             <h2>Heute für dich</h2>
             <SkeletonGrid count={6} compact />
           </section>
-        ) : forYou.data?.length ? (
+        ) : rows.data?.forYou.length ? (
           <BookRow
             title="Heute für dich"
-            subtitle="Passend zu deinem Geschmacksprofil – mehr unter „Für dich“."
-            items={forYou.data}
+            subtitle="Zu deinem Geschmack – abseits der grossen Bestseller, jeden Tag neu gemischt."
+            items={rows.data.forYou}
             origin="Startseite"
             action={
               <Link to="/fuer-dich" className="btn btn-sm">
-                Alle Empfehlungen →
+                Mehr →
               </Link>
             }
           />
         ) : null
+      ) : null}
+
+      {rows.loading ? (
+        <section className="shelf-row">
+          <h2>Entdeckungen</h2>
+          <SkeletonGrid count={6} compact />
+        </section>
       ) : (
-        <div className="notice mt-2">
-          <div>
-            <b>{entries.length ? 'Noch etwas mehr Futter für deinen Geschmack' : 'Persönliche Empfehlungen freischalten'}</b>
-            <div className="small">
-              {entries.length
-                ? 'Deine Bibliothek wird gerade mit Themen angereichert oder enthält noch wenige Bücher. Bewerte ein paar Bücher oder spiel eine Runde Swipe.'
-                : 'Verbinde dein Goodreads-Profil oder lade den CSV-Export hoch – dann lernt der Lesekompass deinen Geschmack und blendet Gelesenes aus.'}
-            </div>
-            <div className="btn-row mt-1">
-              <Link to="/bibliothek?tab=import" className="btn btn-sm btn-teal">
-                Goodreads verbinden
-              </Link>
-              <Link to="/swipe" className="btn btn-sm">
-                Swipe starten
-              </Link>
-            </div>
-          </div>
-        </div>
+        <>
+          {rows.data?.discoveries.length ? (
+            <BookRow
+              title="Entdeckungen"
+              subtitle="Gut bewertet, aber nicht überall zu sehen. Was du schon gesehen hast, macht Platz für Neues."
+              items={rows.data.discoveries}
+              origin="Startseite"
+            />
+          ) : null}
+          {rows.data?.newest.length ? (
+            <BookRow title="Neu und noch nicht überall" subtitle="Erschienen in den letzten Jahren, mit ersten Leser:innen." items={rows.data.newest} origin="Startseite" />
+          ) : null}
+        </>
       )}
 
       {wishItems.length > 0 && (
@@ -177,14 +167,38 @@ export default function Home() {
         />
       )}
 
-      {popular.loading ? (
-        <section className="shelf-row">
-          <h2>Gerade gefragt – auf Deutsch</h2>
-          <SkeletonGrid count={6} compact />
-        </section>
-      ) : popular.data?.length ? (
-        <BookRow title="Gerade gefragt – auf Deutsch" subtitle="Was Leser:innen auf Open Library diese Tage auf ihre Listen setzen." items={popular.data} origin="Startseite" />
-      ) : null}
+      {!usable && (
+        <div className="notice mt-2">
+          <div>
+            <b>{entries.length ? 'Noch etwas mehr Futter für deinen Geschmack' : 'Persönliche Empfehlungen freischalten'}</b>
+            <div className="small">
+              {entries.length
+                ? 'Deine Bibliothek wird gerade mit Themen angereichert oder enthält noch wenige Bücher. Bewerte ein paar Bücher oder blättere durch den Bücher-Stapel.'
+                : 'Verbinde dein Goodreads-Profil oder lade den CSV-Export hoch – dann lernt der Lesekompass deinen Geschmack und blendet Gelesenes aus.'}
+            </div>
+            <div className="btn-row mt-1">
+              <Link to="/bibliothek?tab=import" className="btn btn-sm btn-teal">
+                Goodreads verbinden
+              </Link>
+              <Link to="/swipe" className="btn btn-sm">
+                Bücher-Stapel
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <section className="shelf-row">
+        <h2>Mehr Wege zum nächsten Buch</h2>
+        <div className="mode-grid">
+          {MODES.map((m) => (
+            <Link key={m.to} to={m.to} className="mode-tile">
+              <h3>{m.title}</h3>
+              <p>{m.text}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

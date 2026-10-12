@@ -5,7 +5,7 @@
  */
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import { decayedCount, fatigueFromCount, SIGHTING_GAP } from '../lib/freshness';
+import { decayedCount, fatigueFromCount, homeStaleness, SIGHTING_GAP } from '../lib/freshness';
 import { idbStorage } from './idbStorage';
 
 const MAX_ENTRIES = 6000;
@@ -43,10 +43,31 @@ export const useImpressions = create<ImpressionsState>()(
   ),
 );
 
+/** Wartet, bis die gespeicherten Sichtungen geladen sind (IndexedDB lädt asynchron). */
+export function impressionsReady(timeoutMs = 1500): Promise<void> {
+  const persist = useImpressions.persist;
+  if (!persist || persist.hasHydrated()) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      unsub();
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    const unsub = persist.onFinishHydration(done);
+  });
+}
+
 /** Wie stark ein Buch wegen wiederholten Ignorierens zurückgestuft wird (0–1). */
 export function fatigue(id: string, now = Date.now()): number {
   const e = useImpressions.getState().seen[id];
   return e ? fatigueFromCount(decayedCount(e[0], e[1], now)) : 0;
+}
+
+/** Startseite: kürzlich Gesehenes macht Platz, oft Ignoriertes kommt nur noch selten (0–1.6). */
+export function staleness(id: string, now = Date.now()): number {
+  const e = useImpressions.getState().seen[id];
+  return e ? homeStaleness(e[0], e[1], now) : 0;
 }
 
 /** Löst bei ausreichend langer Sichtbarkeit genau einmal `onSeen` aus (ein Beobachter für alle Karten). */

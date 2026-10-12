@@ -405,9 +405,7 @@ textarea {
     right: 0;
     bottom: 0;
     z-index: 50;
-    background: color-mix(in srgb, var(--bg) 94%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: var(--bg);
     border-top: 1px solid var(--line);
     padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
   }
@@ -1336,6 +1334,37 @@ details.disclosure > .description {
   color: var(--ink);
   border-color: var(--line);
 }
+@media (max-width: 640px) {
+  /* Auf dem Handy: Suche oben, die Bücher schon im ersten Bildschirm */
+  .hero {
+    padding: 18px 0 4px;
+  }
+  .hero h1 {
+    font-size: 1.55rem;
+  }
+  .hero p.lead {
+    font-size: 0.9rem;
+    margin-bottom: 16px;
+  }
+  .quick-moods {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 12px -16px 0;
+    padding: 0 16px 4px;
+  }
+  .quick-moods::-webkit-scrollbar {
+    display: none;
+  }
+  .quick-moods .chip {
+    flex-shrink: 0;
+    border-color: var(--line);
+  }
+  .shelf-row {
+    margin: 28px 0;
+  }
+}
 
 .mode-grid {
   display: grid;
@@ -1850,7 +1879,7 @@ kbd {
   color: var(--muted);
 }
 
-/* ---------- Swipe ---------- */
+/* ---------- Bücher-Stapel ---------- */
 
 .swipe-layout {
   display: grid;
@@ -1858,57 +1887,81 @@ kbd {
   gap: 28px;
   align-items: start;
 }
-.swipe-stage {
-  position: relative;
-  min-height: 660px;
+.deck {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 14px;
+  max-width: 760px;
 }
-.swipe-card {
-  position: absolute;
-  top: 0;
-  width: min(720px, 100%);
-  min-height: 520px;
+.deck-card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 16px;
-  box-shadow: var(--shadow);
   padding: 22px;
-  touch-action: none;
-  user-select: none;
-  cursor: grab;
-  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.28s;
-  will-change: transform;
+  animation: deck-in 0.18s ease both;
 }
-.swipe-card.dragging {
-  transition: none;
-  cursor: grabbing;
+.deck-card.leaving {
+  animation: deck-out 0.18s ease forwards;
 }
-.swipe-card.behind {
-  transform: scale(0.95) translateY(16px);
-  opacity: 0.7;
-  filter: saturate(0.6);
-  pointer-events: none;
+.deck-card.leaving.like {
+  --deck-x: 40px;
 }
-.swipe-empty {
+.deck-card.leaving.dislike {
+  --deck-x: -40px;
+}
+.deck-card.leaving.save {
+  --deck-y: -24px;
+}
+.deck-card.leaving.read {
+  --deck-y: 24px;
+}
+@keyframes deck-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes deck-out {
+  to {
+    opacity: 0;
+    transform: translate(var(--deck-x, 0), var(--deck-y, 0));
+  }
+}
+.deck-empty {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
+  min-height: 320px;
   color: var(--muted);
 }
 .swipe-content {
   display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 24px;
+  grid-template-columns: 200px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  column-gap: 24px;
+  row-gap: 12px;
 }
 .swipe-cover {
-  width: 220px;
-  pointer-events: none;
+  width: 200px;
+  grid-row: 1 / span 2;
 }
-.swipe-info h2 {
-  font-size: 1.7rem;
+.swipe-head-info h2 {
+  font-size: 1.6rem;
+  margin: 4px 0 2px;
+}
+.swipe-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+.swipe-text {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 .swipe-src {
   display: block;
@@ -1919,129 +1972,139 @@ kbd {
   color: var(--muted);
   margin-bottom: 2px;
 }
-.swipe-text {
-  margin-top: 14px;
-  color: var(--ink-2);
-  font-size: 0.95rem;
-  line-height: 1.6;
+.deck-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
 }
-.swipe-stamp {
-  position: absolute;
-  top: 28px;
-  right: 28px;
-  z-index: 3;
-  font-weight: 700;
-  font-size: 1.4rem;
-  padding: 4px 14px;
-  border: 3px solid currentColor;
-  border-radius: 8px;
-  transform: rotate(10deg);
-  letter-spacing: 0.06em;
-}
-.swipe-stamp.like {
-  color: var(--teal);
-}
-.swipe-stamp.dislike {
-  color: var(--rose);
-  left: 28px;
-  right: auto;
-  transform: rotate(-10deg);
-}
-.swipe-stamp.save {
-  color: var(--gold);
-}
-.swipe-actions {
-  position: absolute;
-  top: 548px;
-  display: flex;
-  gap: 18px;
-  align-items: flex-end;
-}
-.swipe-action {
+.deck-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-.swipe-btn {
-  display: grid;
-  place-items: center;
-}
-.swipe-btn {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
+  justify-content: center;
+  gap: 4px;
+  min-height: 68px;
+  padding: 10px 6px;
+  border-radius: 12px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
-  font-size: 1.35rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 550;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
 }
-.swipe-btn:hover {
-  border-color: currentColor;
+.deck-btn:hover:not(:disabled) {
   background: var(--surface-2);
+  border-color: var(--muted);
 }
-.swipe-btn.nope {
+.deck-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.deck-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.deck-icon {
+  display: grid;
+  place-items: center;
+  height: 24px;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+.deck-btn.dislike .deck-icon {
   color: var(--rose);
 }
-.swipe-btn.like {
-  color: var(--teal);
-  width: 66px;
-  height: 66px;
-  font-size: 1.6rem;
-}
-.swipe-btn.save {
+.deck-btn.save .deck-icon {
   color: var(--accent);
 }
-.swipe-btn.read {
-  color: var(--ink-2);
-  width: 50px;
-  height: 50px;
-  font-size: 1.1rem;
+.deck-btn.like {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.deck-btn.like:hover:not(:disabled) {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+.deck-sub {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 32px;
 }
 @media (max-width: 960px) {
   .swipe-layout {
     grid-template-columns: 1fr;
   }
+  .deck {
+    max-width: none;
+  }
+}
+.mobile-only {
+  display: none;
+}
+@media (hover: none), (max-width: 860px) {
+  .desk-only {
+    display: none;
+  }
+  .mobile-only {
+    display: block;
+  }
 }
 @media (max-width: 640px) {
-  .swipe-stage {
-    min-height: 750px;
+  .deck-card {
+    padding: 14px;
+    border-radius: 14px;
   }
-  .swipe-card {
-    min-height: 600px;
-    padding: 16px;
-  }
+  /* Kompakt: kleines Cover neben Titel und Autor:in, Text darunter über die ganze Breite */
   .swipe-content {
-    grid-template-columns: 1fr;
-    gap: 12px;
+    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 14px;
   }
   .swipe-cover {
-    width: 120px;
-    margin: 0 auto;
+    width: 88px;
+    grid-row: 1;
   }
-  /* Karten haben eine feste Höhe – lange Texte dürfen nicht unter die Knöpfe laufen */
-  .swipe-text {
+  .swipe-head-info h2 {
+    font-size: 1.2rem;
     display: -webkit-box;
-    -webkit-line-clamp: 5;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .swipe-info .chips {
-    max-height: 58px;
+  .swipe-body {
+    grid-column: 1 / -1;
+  }
+  .swipe-body .chips {
+    max-height: 56px;
     overflow: hidden;
   }
-  .swipe-info h2 {
-    font-size: 1.4rem;
+  .swipe-text:not(.open) {
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 8;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    cursor: pointer;
   }
-  .swipe-actions {
-    top: 630px;
+  /* Knöpfe bleiben über der Navigationsleiste griffbereit */
+  .deck-actions {
+    position: sticky;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    z-index: 30;
+    gap: 8px;
+    margin: 0 -16px;
+    padding: 10px 16px;
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+  }
+  .deck-btn {
+    min-height: 60px;
+    font-size: 0.76rem;
   }
 }
 

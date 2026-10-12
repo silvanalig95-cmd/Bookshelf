@@ -6,6 +6,8 @@ import { announceBulkChange } from './syncIntent';
 interface SignalsState {
   signals: TasteSignal[];
   record: (book: Book, verdict: SignalVerdict) => void;
+  /** Rückgängig: Entscheidung zu einem Buch entfernen (oder die vorherige wiederherstellen). */
+  restore: (bookId: string, previous?: TasteSignal) => void;
   clear: () => void;
 }
 
@@ -32,6 +34,10 @@ export const useSignals = create<SignalsState>()(
         };
         const rest = get().signals.filter((s) => s.bookId !== book.id);
         set({ signals: [...rest, signal].slice(-MAX_SIGNALS) });
+      },
+      restore: (bookId, previous) => {
+        const rest = get().signals.filter((s) => s.bookId !== bookId);
+        set({ signals: previous ? [...rest, previous] : rest });
       },
       clear: () => {
         announceBulkChange();

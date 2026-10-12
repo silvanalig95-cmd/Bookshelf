@@ -5,7 +5,7 @@ import { Empty, SkeletonGrid } from '../components/Feedback';
 import { useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { isProfileUsable, topGenres } from '../lib/profile';
 import { buildRecommendations, uniqueAcrossSections, type RecSection } from '../lib/recommend';
-import { fatigue } from '../store/impressions';
+import { fatigue, impressionsReady } from '../store/impressions';
 import { useSettings } from '../store/settings';
 import { useSignals } from '../store/signals';
 
@@ -30,9 +30,13 @@ export default function ForYou() {
     setSections([]);
     setLoading(true);
     const dismissed = new Set(signals.filter((s) => s.verdict === 'dislike').map((s) => s.bookId));
-    buildRecommendations(entries, { profile, readIndex, language, dismissed, fatigue: (id) => fatigue(id) }, (section) => {
-      if (!cancelled) setSections((prev) => [...prev.filter((p) => p.id !== section.id), section]);
-    }).finally(() => !cancelled && setLoading(false));
+    impressionsReady()
+      .then(() =>
+        buildRecommendations(entries, { profile, readIndex, language, dismissed, fatigue: (id) => fatigue(id) }, (section) => {
+          if (!cancelled) setSections((prev) => [...prev.filter((p) => p.id !== section.id), section]);
+        }),
+      )
+      .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
       runKey.current = '';
@@ -49,7 +53,7 @@ export default function ForYou() {
         </div>
         <Empty title="Erzähl mir, was du gerne liest">
           <p>
-            Für persönliche Empfehlungen braucht der Lesekompass ein paar Bücher, die du gelesen und bewertet hast – oder ein paar Runden Swipe.
+            Für persönliche Empfehlungen braucht der Lesekompass ein paar Bücher, die du gelesen und bewertet hast – oder ein paar Runden im Bücher-Stapel.
             {entries.length > 0 && ' Deine Bibliothek wird gerade noch mit Themen angereichert.'}
           </p>
           <div className="btn-row" style={{ justifyContent: 'center' }}>
@@ -57,7 +61,7 @@ export default function ForYou() {
               Goodreads verbinden
             </Link>
             <Link to="/swipe" className="btn">
-              Swipe starten
+              Bücher-Stapel
             </Link>
           </div>
         </Empty>
@@ -74,7 +78,7 @@ export default function ForYou() {
         <p className="eyebrow">Für dich</p>
         <h1>Empfehlungen nach deinem Geschmack</h1>
         <p>
-          Berechnet aus {profile.itemCount} Büchern in deiner Bibliothek{profile.signalCount ? ` und ${profile.signalCount} Swipe-Entscheidungen` : ''}. Jede
+          Berechnet aus {profile.itemCount} Büchern in deiner Bibliothek{profile.signalCount ? ` und ${profile.signalCount} Entscheidungen aus dem Bücher-Stapel` : ''}. Jede
           Bewertung und jedes ✕ macht die Vorschläge treffsicherer.
         </p>
       </div>

@@ -16,6 +16,17 @@ export function decayedCount(count: number, last: number, now = Date.now()): num
   return count * Math.pow(0.5, Math.max(0, now - last) / (HALF_LIFE_DAYS * DAY));
 }
 
+/**
+ * Strengere Variante für die Startseite: Wer kürzlich schon da war, macht Platz für Neues –
+ * schon nach dem ersten Mal. Nach ein, zwei Wochen darf ein Buch wiederkommen; wer immer wieder
+ * ignoriert wird, kommt nur noch selten (abklingend über HALF_LIFE_DAYS).
+ */
+export function homeStaleness(count: number, last: number, now = Date.now()): number {
+  const days = Math.max(0, now - last) / DAY;
+  const recent = days < 3 ? 0.8 : days < 7 ? 0.45 : days < 14 ? 0.2 : 0;
+  return Math.min(1.6, recent + decayedCount(count, last, now) * 0.15);
+}
+
 /** 0 = frisch … 1 = lange ignoriert (ab etwa zwölfmal gesehen). Die ersten zwei Male sind frei. */
 export function fatigueFromCount(count: number): number {
   return Math.min(1, Math.max(0, (count - 2) * 0.1));

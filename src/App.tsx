@@ -29,7 +29,7 @@ const NAV = [
 ];
 
 const PLAY = [
-  { to: '/swipe', label: 'Bücher-Swipe', hint: 'Wischen & Geschmack lernen' },
+  { to: '/swipe', label: 'Bücher-Stapel', hint: 'Spannend, merken oder weiter' },
   { to: '/gluecksrad', label: 'Glücksrad & Blind Date', hint: 'Zufall mit Stil' },
   { to: '/orakel', label: 'Lese-Orakel', hint: '7 Fragen, 1 Lesestimmung' },
   { to: '/themen', label: 'Themen-Netz', hint: 'Von Thema zu Thema springen' },
@@ -78,7 +78,7 @@ const BOTTOM_NAV: Array<{ to: string; label: string; icon: IconName; end?: boole
   { to: '/', label: 'Start', icon: 'compass', end: true },
   { to: '/entdecken', label: 'Entdecken', icon: 'search' },
   { to: '/fuer-dich', label: 'Für dich', icon: 'star' },
-  { to: '/swipe', label: 'Swipe', icon: 'cards' },
+  { to: '/swipe', label: 'Stapel', icon: 'cards' },
   { to: '/bibliothek', label: 'Bibliothek', icon: 'book' },
 ];
 

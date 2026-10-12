@@ -4,7 +4,7 @@
  * Ohne den neueren Topf bestünde der Stapel fast nur aus Klassikern, denn die meistgelesenen
  * Bücher auf Open Library sind Schullektüre und Weltliteratur.
  */
-import { ageWeight, famePrior } from './discovery';
+import { ageWeight, discoveryPrior } from './discovery';
 import { settle } from './http';
 import { docToBook, searchWorks } from './openLibrary';
 import { bookFeatures, contentFit, interleave, MODERN_FROM, modernShare, planDeck, SWIPE_GENRES, type DeckSlot, type Rng, type SwipeModel } from './swipeModel';
@@ -85,7 +85,7 @@ export async function drawDeck(model: SwipeModel, opts: DrawOptions): Promise<De
       .filter((b) => !authorsUsed.has(authorOf(b)))
       .filter((b, i, arr) => arr.findIndex((x) => x.id === b.id || authorOf(x) === authorOf(b)) === i)
       // Passung zu deinen Swipes + bekannte Bücher bevorzugt + etwas Zufall, damit der Stapel lebendig bleibt
-      .map((b) => ({ b, s: contentFit(b, model) * fitWeight + famePrior(b) * 0.6 + ageWeight(b).adj * 0.8 + rng() * 0.6 }))
+      .map((b) => ({ b, s: contentFit(b, model) * fitWeight + discoveryPrior(b) * 0.6 + ageWeight(b).adj * 0.8 + rng() * 0.6 }))
       .sort((a, b) => b.s - a.s)
       .slice(0, count);
     for (const { b } of ranked) {

@@ -20,6 +20,10 @@ export type OLSort =
   | 'new'
   | 'old'
   | 'editions'
+  /** Zufällige Reihenfolge, täglich bzw. stündlich neu gemischt. */
+  | 'random'
+  | 'random.daily'
+  | 'random.hourly'
   | 'random'
   | 'random.hourly';
 

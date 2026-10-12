@@ -9,7 +9,7 @@
  *  - Über den Tellerrand: verwandte Themen, die du selten liest (Serendipität).
  */
 import { rotate } from './freshness';
-import { ageWeight, bayesRating, distinctiveSubjects, famePrior, hasGerman, MIN_RATINGS, mergeBooks } from './discovery';
+import { ageWeight, bayesRating, discoveryPrior, distinctiveSubjects, hasGerman, MIN_RATINGS, mergeBooks } from './discovery';
 import { settle } from './http';
 import { docToBook, getSubject, searchWorks, subjectKey, type OLSort } from './openLibrary';
 import { conceptsOf, tasteMatch, type TasteProfile } from './profile';
@@ -53,7 +53,7 @@ export function scoreForProfile(book: Book, ctx: RecContext, extraReasons: Reaso
   const german = hasGerman(book) ? 0.08 : 0;
   // Bekanntheit als spürbarer Zuschlag – Obskures rutscht nach hinten (ausser in „Geheimtipps“, siehe hiddenGems)
   const age = ageWeight(book);
-  const score = tm.similarity + quality * 0.25 + german + Math.min(0.15, tm.authorBonus * 0.04) + famePrior(book) * 0.08 + age.adj * 0.12;
+  const score = tm.similarity + quality * 0.25 + german + Math.min(0.15, tm.authorBonus * 0.04) + discoveryPrior(book) * 0.08 + age.adj * 0.12;
   const reasons: Reason[] = [...extraReasons];
   if (tm.shared.length) reasons.push({ kind: 'taste', label: tm.shared.slice(0, 2).join(', ') });
   if (german) reasons.push({ kind: 'german', label: 'auf Deutsch' });

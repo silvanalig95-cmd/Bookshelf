@@ -7,13 +7,13 @@ import { Stars } from '../components/Stars';
 import { hasGerman } from '../lib/discovery';
 import { useAsync, useProfile, useReadIndex } from '../lib/hooks';
 import { settle } from '../lib/http';
-import { getWork, isbnCoverUrl } from '../lib/openLibrary';
+import { coverUrl, getWork, isbnCoverUrl } from '../lib/openLibrary';
 import { isProfileUsable } from '../lib/profile';
 import { drawDeck, type DeckCard } from '../lib/swipeDeck';
 import { buildSwipeModel, MODERN_FROM, summarizeModel } from '../lib/swipeModel';
 import { displaySubjects, languageLabel } from '../lib/taxonomy';
 import { shuffle, truncate } from '../lib/text';
-import type { Book, SignalVerdict } from '../lib/types';
+import type { Book, SignalVerdict, TasteSignal } from '../lib/types';
 import { readBlurb } from '../lib/blurbCache';
 import { contentSummary, germanWikipediaSummary, guessLanguage, type WikiSummary } from '../lib/wikipedia';
 import { useSettings } from '../store/settings';
@@ -21,13 +21,27 @@ import { useSignals } from '../store/signals';
 import { rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
 
-const THRESHOLD = 110;
 const DECK_SIZE = 16;
 
 interface SessionState {
   liked: Book[];
   count: number;
 }
+
+/** Letzte Entscheidung – für „Rückgängig“. */
+interface LastDecision {
+  card: DeckCard;
+  verdict: SignalVerdict;
+  previous?: TasteSignal;
+  wasSaved: boolean;
+}
+
+const ACTIONS: Array<{ verdict: SignalVerdict; label: string; key: string; title: string }> = [
+  { verdict: 'dislike', label: 'Nicht meins', key: '←', title: 'Nicht meins – weniger davon' },
+  { verdict: 'read', label: 'Gelesen', key: '↓', title: 'Schon gelesen – bewerten' },
+  { verdict: 'save', label: 'Merken', key: '↑', title: 'Merken – dieses Buch will ich lesen' },
+  { verdict: 'like', label: 'Spannend', key: '→', title: 'Klingt spannend – mehr in diese Richtung' },
+];
 
 
 export default function Swipe() {
@@ -42,8 +56,10 @@ export default function Swipe() {
   const readIndex = useReadIndex();
   const [deck, setDeck] = useState<DeckCard[]>([]);
   const [loading, setLoading] = useState(false);
-  const [drag, setDrag] = useState({ x: 0, y: 0, active: false });
   const [leaving, setLeaving] = useState<SignalVerdict | null>(null);
+  const [last, setLast] = useState<LastDecision>();
+  const restore = useSignals((s) => s.restore);
+  const removeWish = useWishlist((s) => s.remove);
   const [session, setSession] = useState<SessionState>({ liked: [], count: 0 });
   // Alle bisherigen Entscheidungen – auch aus früheren Runden und von anderen Geräten
   const model = useMemo(() => buildSwipeModel(signals), [signals]);
@@ -52,7 +68,6 @@ export default function Swipe() {
   modelRef.current = model;
   const seen = useRef(new Set(signals.map((s) => s.bookId)));
   const fetching = useRef(false);
-  const start = useRef<{ x: number; y: number } | null>(null);
 
   const langClause = language === 'any' ? '' : ' language:ger';
 
@@ -84,11 +99,18 @@ export default function Swipe() {
   const currentWhy = deck[0]?.why;
   const next = deck[1]?.book;
 
+  // Das Cover der nächsten Karte schon laden, damit sie sofort da ist
+  useEffect(() => {
+    const url = next?.coverUrl ?? coverUrl(next?.coverId, 'L');
+    if (url) new Image().src = url;
+  }, [next?.id]);
+
   const decide = useCallback(
     (verdict: SignalVerdict) => {
       if (!current || leaving) return;
       setLeaving(verdict);
       const book = current;
+      setLast({ card: deck[0], verdict, previous: useSignals.getState().signals.find((x) => x.bookId === book.id), wasSaved: Boolean(useWishlist.getState().items[book.id]) });
       record(book, verdict);
       if (verdict === 'save') {
         addWish(book, 'Swipe');
@@ -100,42 +122,36 @@ export default function Swipe() {
       setTimeout(() => {
         setDeck((d) => d.slice(1));
         setLeaving(null);
-        setDrag({ x: 0, y: 0, active: false });
-      }, 260);
+      }, 180);
     },
-    [current, leaving, record, addWish, openRating],
+    [current, deck, leaving, record, addWish, openRating],
   );
+
+  /** Die letzte Entscheidung zurücknehmen – die Karte liegt danach wieder oben. */
+  const undo = useCallback(() => {
+    if (!last || leaving) return;
+    const book = last.card.book;
+    restore(book.id, last.previous);
+    if (last.verdict === 'save' && !last.wasSaved) removeWish(book.id);
+    setSession((s) => ({ liked: s.liked.filter((b) => b.id !== book.id), count: Math.max(0, s.count - 1) }));
+    setDeck((d) => [last.card, ...d.filter((c) => c.book.id !== book.id)]);
+    setLast(undefined);
+    toast('Rückgängig gemacht');
+  }, [last, leaving, restore, removeWish]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT' || document.querySelector('.modal')) return;
-      if (e.key === 'ArrowLeft') decide('dislike');
-      else if (e.key === 'ArrowRight') decide('like');
-      else if (e.key === 'ArrowUp') decide('save');
-      else if (e.key === 'ArrowDown') decide('read');
+      const el = e.target as HTMLElement;
+      if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || document.querySelector('.modal') || e.metaKey || e.ctrlKey || e.altKey) return;
+      const keys: Record<string, SignalVerdict> = { ArrowLeft: 'dislike', ArrowRight: 'like', ArrowUp: 'save', ArrowDown: 'read' };
+      if (keys[e.key]) {
+        e.preventDefault();
+        decide(keys[e.key]);
+      } else if (e.key === 'z' || e.key === 'Backspace') undo();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [decide]);
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('a,button')) return;
-    start.current = { x: e.clientX, y: e.clientY };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    setDrag({ x: 0, y: 0, active: true });
-  };
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!start.current) return;
-    setDrag({ x: e.clientX - start.current.x, y: e.clientY - start.current.y, active: true });
-  };
-  const onPointerUp = () => {
-    if (!start.current) return;
-    start.current = null;
-    if (drag.x > THRESHOLD) decide('like');
-    else if (drag.x < -THRESHOLD) decide('dislike');
-    else if (drag.y < -THRESHOLD) decide('save');
-    else setDrag({ x: 0, y: 0, active: false });
-  };
+  }, [decide, undo]);
 
   const recentLikes = useMemo(
     () =>
@@ -146,75 +162,52 @@ export default function Swipe() {
     [signals],
   );
 
-  const exitX = leaving === 'like' ? 700 : leaving === 'dislike' ? -700 : 0;
-  const exitY = leaving === 'save' ? -700 : leaving === 'read' ? 700 : 0;
-  const tx = leaving ? exitX : drag.x;
-  const ty = leaving ? exitY : drag.y;
-  const hint = drag.x > 40 ? 'like' : drag.x < -40 ? 'dislike' : drag.y < -40 ? 'save' : null;
-
   return (
     <div>
       <div className="page-head">
-        <h1>Bücher-Swipe</h1>
-        <p>
-          Rechts = <b>klingt spannend</b> (mehr in diese Richtung), hoch = <b>merken</b> (dieses Buch will ich lesen – kommt zusätzlich auf die Merkliste),
-          links = nicht meins. Jede Entscheidung wird gespeichert und fliesst in den nächsten Stapel und in alle Empfehlungen ein. Tastatur: <kbd>←</kbd>{' '}
-          <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>
+        <h1>Bücher-Stapel</h1>
+        <p className="muted mobile-only small">Spannend = mehr in diese Richtung · Merken = auf die Merkliste</p>
+        <p className="muted desk-only">
+          Eine Karte nach der anderen: <b>Spannend</b> heisst „mehr in diese Richtung“, <b>Merken</b> legt das Buch zusätzlich auf die Merkliste. Jede
+          Entscheidung wird gespeichert und fliesst in alle Empfehlungen ein.
+          <span>
+            {' '}
+            Tastatur: <kbd>←</kbd> <kbd>↓</kbd> <kbd>↑</kbd> <kbd>→</kbd>, rückgängig mit <kbd>Z</kbd>.
+          </span>
         </p>
       </div>
 
       <div className="swipe-layout">
-        <div className="swipe-stage">
-          {!current && (
-            <div className="swipe-card swipe-empty">
+        <div className="deck">
+          {current ? (
+            <article key={current.id} className={`deck-card ${leaving ? `leaving ${leaving}` : ''}`} aria-live="polite">
+              <SwipeCardContent book={current} why={currentWhy} />
+            </article>
+          ) : (
+            <div className="deck-card deck-empty">
               <span className="spinner" /> {loading ? 'Neue Bücher werden gemischt …' : 'Keine Karten mehr – lade nach …'}
             </div>
           )}
-          {next && (
-            <div className="swipe-card behind" aria-hidden="true">
-              <SwipeCardContent book={next} preview />
-            </div>
-          )}
-          {current && (
-            <div
-              key={current.id}
-              className={`swipe-card ${drag.active ? 'dragging' : ''}`}
-              style={{ transform: `translate(${tx}px, ${ty}px) rotate(${tx / 18}deg)`, opacity: leaving ? 0 : 1 }}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
-            >
-              {hint && (
-                <div className={`swipe-stamp ${hint}`}>{hint === 'like' ? 'SPANNEND' : hint === 'dislike' ? 'NÖ' : 'MERKEN'}</div>
-              )}
-              <SwipeCardContent book={current} why={currentWhy} />
-            </div>
-          )}
-          <div className="swipe-actions">
-            <span className="swipe-action">
-              <button className="swipe-btn nope" onClick={() => decide('dislike')} title="Nicht meins (←)" aria-label="Nicht meins">
-                ✕
+          <div className="deck-actions" role="group" aria-label="Entscheidung zu diesem Buch">
+            {ACTIONS.map((a) => (
+              <button key={a.verdict} className={`deck-btn ${a.verdict}`} onClick={() => decide(a.verdict)} disabled={!current || Boolean(leaving)} title={`${a.title} (${a.key})`}>
+                <span className="deck-icon" aria-hidden="true">
+                  {a.verdict === 'dislike' ? '✕' : a.verdict === 'read' ? '✓' : <Icon name={a.verdict === 'save' ? 'heart' : 'thumb'} size={22} />}
+                </span>
+                <span>{a.label}</span>
               </button>
-              Nicht meins
-            </span>
-            <span className="swipe-action">
-              <button className="swipe-btn read" onClick={() => decide('read')} title="Schon gelesen (↓)" aria-label="Schon gelesen">
-                ✓
+            ))}
+          </div>
+          <div className="deck-sub">
+            {last ? (
+              <button className="btn btn-sm btn-ghost" onClick={undo}>
+                ↺ Rückgängig
               </button>
-              Gelesen
-            </span>
-            <span className="swipe-action">
-              <button className="swipe-btn save" onClick={() => decide('save')} title="Merken – auf die Merkliste (↑)" aria-label="Merken">
-                <Icon name="heart" size={24} />
-              </button>
-              Merken
-            </span>
-            <span className="swipe-action">
-              <button className="swipe-btn like" onClick={() => decide('like')} title="Klingt spannend – mehr davon (→)" aria-label="Klingt spannend">
-                <Icon name="thumb" size={26} />
-              </button>
-              Spannend
+            ) : (
+              <span />
+            )}
+            <span className="tiny muted">
+              {model.total.toLocaleString('de-CH')} Entscheidungen gespeichert{session.count ? ` · ${session.count} in dieser Runde` : ''}
             </span>
           </div>
         </div>
@@ -259,12 +252,9 @@ export default function Swipe() {
             <p className="small mt-1 mb-0">
               <span className="muted">Neu und älter: </span>
               etwa {Math.round(summary.modern * 100)} % seit {MODERN_FROM} erschienen
-              {model.eras.neu.pos + model.eras.neu.neg + model.eras.alt.pos + model.eras.alt.neg >= 6 ? ' (nach deinen Swipes angepasst)' : ''}, bei Weltliteratur mehr Älteres
+              {model.eras.neu.pos + model.eras.neu.neg + model.eras.alt.pos + model.eras.alt.neg >= 6 ? ' (nach deinen Entscheidungen angepasst)' : ''}, bei Weltliteratur mehr Älteres
             </p>
-            <p className="tiny muted mt-2 mb-0">
-              {model.total.toLocaleString('de-CH')} Entscheidungen gespeichert · {session.count} in dieser Runde. Jeder Stapel: etwa drei Viertel nach deinem
-              Geschmack, ein Viertel Neuland, kein Genre über 30 %.
-            </p>
+            <p className="tiny muted mt-2 mb-0">Jeder Stapel: etwa drei Viertel nach deinem Geschmack, ein Viertel Neuland, kein Genre über 30 %.</p>
           </div>
           <div className="card">
             <h3>{session.liked.length ? 'Deine Treffer' : 'Zuletzt gemocht'}</h3>
@@ -312,7 +302,7 @@ export default function Swipe() {
                 ))}
               </div>
             ) : (
-              <p className="small muted mb-0">Noch nichts – wisch los!</p>
+              <p className="small muted mb-0">Noch nichts – leg los!</p>
             )}
           </div>
         </aside>
@@ -329,44 +319,48 @@ function SwipeCardContent({ book, preview = false, why }: { book: Book; preview?
       preview || work.loading ? undefined : germanWikipediaSummary({ wikidataId, titles: [book.title], author: book.authors[0] }, signal).catch(() => undefined),
     [book.id, preview, work.loading, wikidataId],
   );
-  const subjects = displaySubjects(book.subjects, 6);
+  const subjects = displaySubjects(book.subjects, 5);
   const about = describe(book, wiki.data, work.data?.description);
   const isbn = book.isbns?.[0];
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => setExpanded(false), [book.id]);
   return (
     <div className="swipe-content">
       <Cover title={book.title} author={book.authors[0]} coverId={book.coverId} src={book.coverUrl} size="L" fallbacks={isbn ? [isbnCoverUrl(isbn, 'L')] : []} className="swipe-cover" />
-      <div className="swipe-info">
+      <div className="swipe-head-info">
         <div className="small muted">
           {[why, book.year, book.pages ? `${book.pages} Seiten` : undefined, hasGerman(book) ? undefined : 'nicht auf Deutsch'].filter(Boolean).join(' · ')}
         </div>
-        <h2 className="mt-1">{book.title}</h2>
+        <h2>{book.title}</h2>
         <div className="muted">{book.authors.slice(0, 2).join(', ')}</div>
         {book.rating && (book.ratingsCount ?? 0) >= 3 ? (
           <div className="mt-1">
             <Stars value={book.rating} />
           </div>
         ) : null}
-        {!preview && (
-          <>
-            <div className="chips mt-1">
-              {subjects.map((s) => (
-                <span key={s} className="tag">
-                  {s}
+      </div>
+      {!preview && (
+        <div className="swipe-body">
+          {subjects.length > 0 && (
+            <div className="chips">
+              {subjects.map((x) => (
+                <span key={x} className="tag">
+                  {x}
                 </span>
               ))}
             </div>
-            {about && (
-              <p className="swipe-text">
-                <span className="swipe-src">{about.label}</span>
-                {truncate(about.text, 420)}
-              </p>
-            )}
-            <Link to={bookPath(book)} onClick={() => rememberBook(book)} className="btn btn-sm btn-ghost">
-              Details & Angebote →
-            </Link>
-          </>
-        )}
-      </div>
+          )}
+          {about && (
+            <p className={`swipe-text ${expanded ? 'open' : ''}`} onClick={() => setExpanded(true)}>
+              <span className="swipe-src">{about.label}</span>
+              {expanded ? about.text : truncate(about.text, 600)}
+            </p>
+          )}
+          <Link to={bookPath(book)} onClick={() => rememberBook(book)} className="small">
+            Details & Angebote →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }
