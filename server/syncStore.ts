@@ -153,6 +153,18 @@ export class SyncStore {
     for (const f of all.slice(0, Math.max(0, all.length - KEEP_BACKUPS))) rmSync(join(dir, f), { force: true });
   }
 
+  /** Aktuelle Datensätze einer Sammlung (ohne gelöschte) – nur lesend, z. B. für die Nachtschicht. */
+  records(user: string | null, collection: SyncCollection): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [id, rec] of Object.entries(this.load(user).collections[collection])) if (!rec.d) out[id] = rec.v;
+    return out;
+  }
+
+  /** Stand des Bestands – ändert sich mit jeder Änderung. */
+  revision(user: string | null): number {
+    return this.load(user).rev;
+  }
+
   counts(user: string | null): Record<SyncCollection, number> {
     const data = this.load(user);
     const counts = { library: 0, wishlist: 0, signals: 0, settings: 0 };

@@ -10,6 +10,7 @@
  * - /api/llm/<anbieter>/...  → Ausweich-Kanäle Mistral, Groq, OpenRouter (MISTRAL_API_KEY …);
  *                              reicht auch Anfragen mit einem Schlüssel aus dem Browser weiter
  * - /api/blurbs              → gemerkte KI-Kurzbeschreibungen (für alle Geräte)
+ * - /api/nachtschicht        → Stand und Ergebnisse der Nachtschicht (siehe nightShift.ts)
  * - /api/sync                → gleicht Bibliothek, Merkliste & Co. zwischen Geräten ab
  *                              (nur wenn ein Datenordner eingerichtet ist, siehe syncStore.ts)
  *
@@ -21,6 +22,7 @@ import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
 import type { Plugin } from 'vite';
 import type { BlurbStore } from './blurbStore.ts';
+import type { NightShift } from './nightShift.ts';
 import { SyncInputError, type SyncStore } from './syncStore.ts';
 
 type Next = (err?: unknown) => void;
@@ -42,6 +44,8 @@ export interface LocalApiOptions {
   userOf?: (req: IncomingMessage) => string | null;
   /** Ablage für KI-Kurzbeschreibungen (nur mit Datenordner). */
   blurbs?: BlurbStore;
+  /** Nutzt das restliche Gemini-Kontingent am Ende des Google-Tages. */
+  nightShift?: NightShift;
 }
 
 export type LlmProvider = 'mistral' | 'groq' | 'openrouter';
@@ -157,8 +161,22 @@ export function createLocalApiHandler(options: LocalApiOptions) {
           llm: { mistral: canUseLlm(req, 'mistral'), groq: canUseLlm(req, 'groq'), openrouter: canUseLlm(req, 'openrouter') },
           sync: Boolean(options.sync),
           blurbs: Boolean(options.blurbs),
+          nightShift: Boolean(options.nightShift),
           user: userOf(req),
         });
+      }
+
+      if (url.pathname === '/api/nachtschicht') {
+        if (!options.nightShift) return sendJson(res, 200, { available: false });
+        return sendJson(res, 200, { available: true, status: options.nightShift.getStatus(), results: options.nightShift.results(userOf(req)) }, req);
+      }
+
+      if (url.pathname === '/api/nachtschicht/start') {
+        if (!options.nightShift) return sendJson(res, 404, { error: 'Die Nachtschicht ist auf diesem Server nicht eingerichtet.' });
+        if (req.method !== 'POST' || !isSameOriginJson(req)) return sendJson(res, 405, { error: 'Nur POST' });
+        if (!aiAllowed(req)) return sendJson(res, 403, { error: 'Nur für angemeldete Personen.' });
+        void options.nightShift.runNow();
+        return sendJson(res, 200, { ok: true });
       }
 
       if (url.pathname === '/api/blurbs') {
@@ -279,6 +297,8 @@ export function createLocalApiHandler(options: LocalApiOptions) {
           return sendJson(res, 403, { error: 'Den Gemini-Schlüssel des Servers dürfen nur angemeldete Personen nutzen (LESEKOMPASS_AUTH setzen).' });
         }
         if (!isSameOriginJson(req)) return sendJson(res, 403, { error: 'Anfrage von fremder Herkunft abgelehnt.' });
+        // Wer gerade die KI nutzt, hat Vorrang vor der Nachtschicht
+        options.nightShift?.noteActivity();
         const path = url.pathname.slice('/api/gemini'.length);
         if (req.method !== 'POST' || !GEMINI_PATH.test(path)) return sendJson(res, 404, { error: 'Nicht unterstützter Endpunkt' });
         const body = await readBody(req);

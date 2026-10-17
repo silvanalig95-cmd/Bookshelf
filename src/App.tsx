@@ -8,6 +8,7 @@ import { Onboarding } from './components/Onboarding';
 import { RatingDialog } from './components/RatingDialog';
 import { AppFooter, UpdateBanner } from './components/UpdateBanner';
 import { useSettings } from './store/settings';
+import { startNightShift } from './store/nightShift';
 import { startSync } from './store/sync';
 import { useWishlist } from './store/wishlist';
 import Home from './pages/Home';
@@ -99,7 +100,10 @@ function ScrollToTop() {
 
 export default function App() {
   useTheme();
-  useEffect(() => startSync(), []);
+  useEffect(() => {
+    startSync();
+    startNightShift();
+  }, []);
   const location = useLocation();
   const wishCount = useWishlist((s) => Object.keys(s.items).length);
   const theme = useSettings((s) => s.theme);

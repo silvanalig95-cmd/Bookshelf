@@ -11,6 +11,10 @@
  *   LESEKOMPASS_AUTH   Login, z. B. "ich:langes-passwort" – mehrere mit ";" getrennt
  *   ANTHROPIC_API_KEY  optionaler Claude-Schlüssel (nur für angemeldete Personen nutzbar)
  *   GEMINI_API_KEY     optionaler Gemini-Schlüssel von Google AI Studio (ebenso)
+ *   LESEKOMPASS_NACHTSCHICHT     "0" schaltet die Nachtschicht aus (nutzt sonst mit GEMINI_API_KEY und Datenordner
+ *                                das restliche Gemini-Tageskontingent für die Bibliothek, siehe nightShift.ts)
+ *   LESEKOMPASS_NACHTSCHICHT_AB  ab welcher Stunde Ortszeit (Standard 22)
+ *   LESEKOMPASS_TZ               Zeitzone dafür (Standard Europe/Zurich)
  *   MISTRAL_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY
  *                      optionale Gratis-Ausweich-Kanäle, wenn das Gemini-Kontingent aufgebraucht ist
  *   LESEKOMPASS_DIST   Ordner mit der gebauten App (Standard ../dist)
@@ -27,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { createLocalApiHandler, isLocalRequest } from './localApi.ts';
 import { BlurbStore } from './blurbStore.ts';
+import { NightShift } from './nightShift.ts';
 import { SyncStore } from './syncStore.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -59,6 +64,8 @@ export interface ServerConfig {
   anthropicApiKey?: string;
   geminiApiKey?: string;
   llmKeys?: { mistral?: string; groq?: string; openrouter?: string };
+  /** Nachtschicht: ab welcher Stunde (Ortszeit) das restliche Gemini-Kontingent genutzt wird; false = aus. */
+  nightShift?: { startHour: number; timeZone: string } | false;
   /** Ordner für die Geräte-Synchronisation (fehlt = keine Synchronisation). */
   dataDir?: string;
 }
@@ -109,6 +116,13 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ServerConfi
       openrouter: env.OPENROUTER_API_KEY?.trim() || undefined,
     },
     dataDir: env.LESEKOMPASS_DATA ? resolve(env.LESEKOMPASS_DATA) : env.LESEKOMPASS_HOME ? join(resolve(env.LESEKOMPASS_HOME), 'data') : undefined,
+    nightShift:
+      env.LESEKOMPASS_NACHTSCHICHT === '0'
+        ? false
+        : {
+            startHour: Math.min(23, Math.max(0, Number.parseInt(env.LESEKOMPASS_NACHTSCHICHT_AB ?? '22', 10) || 22)),
+            timeZone: env.LESEKOMPASS_TZ?.trim() || 'Europe/Zurich',
+          },
   };
 }
 
@@ -241,9 +255,24 @@ function serveStatic(cfg: ServerConfig, req: IncomingMessage, res: ServerRespons
 /* Server                                                                 */
 /* ------------------------------------------------------------------ */
 
-export function createAppServer(cfg: ServerConfig): Server {
+export function createAppServer(cfg: ServerConfig): Server & { nightShift?: NightShift } {
   const users = new WeakMap<IncomingMessage, string | null>();
   const failures: Failures = new Map();
+  const sync = cfg.dataDir ? new SyncStore(cfg.dataDir) : undefined;
+  const blurbs = cfg.dataDir ? new BlurbStore(cfg.dataDir) : undefined;
+  const nightShift =
+    sync && blurbs && cfg.dataDir && cfg.geminiApiKey && cfg.nightShift
+      ? new NightShift({
+          dir: cfg.dataDir,
+          geminiKey: cfg.geminiApiKey,
+          users: cfg.users.size ? Array.from(cfg.users.keys()) : [null],
+          sync,
+          blurbs,
+          startHour: cfg.nightShift.startHour,
+          timeZone: cfg.nightShift.timeZone,
+          log: (m) => console.log(m),
+        })
+      : undefined;
   const api = createLocalApiHandler({
     anthropicApiKey: cfg.anthropicApiKey,
     geminiApiKey: cfg.geminiApiKey,
@@ -251,11 +280,12 @@ export function createAppServer(cfg: ServerConfig): Server {
     allowRemote: true,
     // Den Server-Schlüssel nur mit Login (oder direkt auf diesem Rechner) freigeben
     canUseAi: (req) => cfg.users.size > 0 || isLocalRequest(req),
-    sync: cfg.dataDir ? new SyncStore(cfg.dataDir) : undefined,
+    sync,
     userOf: (req) => users.get(req) ?? null,
-    blurbs: cfg.dataDir ? new BlurbStore(cfg.dataDir) : undefined,
+    blurbs,
+    nightShift,
   });
-  return createServer((req, res) => {
+  const server = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0];
     if (path === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -270,6 +300,7 @@ export function createAppServer(cfg: ServerConfig): Server {
       res.end(err instanceof Error ? err.message : 'Fehler');
     });
   });
+  return Object.assign(server, { nightShift });
 }
 
 function get(
@@ -369,8 +400,15 @@ async function main() {
     ] as const) {
       if (key) console.log(cfg.users.size ? `${name}-Schlüssel des Servers aktiv.` : `${name}-Schlüssel gesetzt, aber ohne Login nur auf diesem Rechner selbst nutzbar.`);
     }
+    if (server.nightShift) {
+      server.nightShift.start();
+      console.log(`Nachtschicht aktiv: ab ${server.nightShift.startHour}:00 (${server.nightShift.timeZone}) wird das restliche Gemini-Tageskontingent für die Bibliothek genutzt.`);
+    }
   });
-  const stop = () => server.close(() => process.exit(0));
+  const stop = () => {
+    server.nightShift?.stop();
+    server.close(() => process.exit(0));
+  };
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
 }

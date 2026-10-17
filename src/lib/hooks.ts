@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { buildReadIndex, useLibrary } from '../store/library';
+import { useNightShift } from '../store/nightShift';
 import { useSignals } from '../store/signals';
 import { buildProfile, type TasteProfile } from './profile';
 import type { LibraryEntry } from './types';
@@ -19,11 +20,16 @@ export function useReadIndex() {
 export function useProfile(): TasteProfile | undefined {
   const entries = useLibrary((s) => s.entries);
   const signals = useSignals(useShallow((s) => s.signals));
+  // Schlagwörter, die die Nachtschicht ergänzt hat – vor allem für Bücher, die Open Library kaum kennt
+  const themes = useNightShift((s) => s.results.themes);
   return useMemo(() => {
-    const list = Object.values(entries);
+    const list = Object.values(entries).map((e) => {
+      const extra = themes[e.id]?.subjects;
+      return extra?.length ? { ...e, subjects: [...(e.subjects ?? []), ...extra.filter((x) => !e.subjects?.includes(x))] } : e;
+    });
     if (!list.length && !signals.length) return undefined;
     return buildProfile(list, signals);
-  }, [entries, signals]);
+  }, [entries, signals, themes]);
 }
 
 /** Führt eine asynchrone Funktion aus, sobald sich die Abhängigkeiten ändern. */

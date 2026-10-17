@@ -144,6 +144,23 @@ OPENROUTER_API_KEY=...   # https://openrouter.ai/settings/keys  (rund 50 Anfrage
 
 Unter **Einstellungen → KI → Ausweich-Kanäle** lässt sich jeder Kanal einzeln testen. Antwortet ein Ausweich-Kanal, steht das klein unter der Antwort.
 
+### Nachtschicht: das restliche Kontingent nicht verfallen lassen
+
+Mit `GEMINI_API_KEY` arbeitet der Server **ab 22 Uhr bis zum Tageswechsel bei Google (9 Uhr Schweizer Zeit)** mit dem, was vom Gemini-Kontingent des Tages übrig ist:
+
+1. deutsche Kurzbeschreibungen für Bücher auf der Merkliste und „Will ich lesen“ (danach sofort auf der Buchseite da)
+2. Schlagwörter für die Bücher deiner Bibliothek – vor allem für die, die Open Library kaum kennt; das schärft „Für dich“ und die Suche
+3. eine Lese-Analyse (Bibliothek → Lese-DNA), wenn sich die Bibliothek geändert hat
+4. neue Vorschläge, auf Open Library nachgeschlagen und mit Kurzbeschreibung („Für dich“ → „Über Nacht gefunden“)
+
+Sie hört auf, wenn alle Gemini-Modelle ihr Tageskontingent aufgebraucht haben oder nichts mehr zu tun ist, und lässt dir den Vortritt, wenn du die KI gerade selbst nutzt. Wichtig: Sie läuft nur, wenn der Computer mit Docker in dieser Zeit an ist. Stand und „Jetzt starten“ unter **Einstellungen → KI → Nachtschicht**. Anpassen in `deploy\lesekompass.env`:
+
+```
+LESEKOMPASS_NACHTSCHICHT=1        # 0 = aus
+LESEKOMPASS_NACHTSCHICHT_AB=22    # ab welcher Stunde
+LESEKOMPASS_TZ=Europe/Zurich
+```
+
 Lieber **Claude** von Anthropic (kostet wenige Rappen pro Frage)? Dann stattdessen oder zusätzlich `ANTHROPIC_API_KEY=sk-ant-...` eintragen. Welcher Anbieter antwortet, wählst du in der App unter **Einstellungen → KI**.
 
 Dann übernehmen:

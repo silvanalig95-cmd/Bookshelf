@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BookRow } from '../components/BookCard';
 import { Empty, SkeletonGrid } from '../components/Feedback';
 import { useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { isProfileUsable, topGenres } from '../lib/profile';
 import { buildRecommendations, uniqueAcrossSections, type RecSection } from '../lib/recommend';
+import type { Book, ScoredBook } from '../lib/types';
 import { fatigue, impressionsReady } from '../store/impressions';
+import { useNightShift } from '../store/nightShift';
 import { useSettings } from '../store/settings';
 import { useSignals } from '../store/signals';
 
@@ -20,6 +22,17 @@ export default function ForYou() {
   const [round, setRound] = useState(0);
   const usable = isProfileUsable(profile);
   const runKey = useRef('');
+  const suggestions = useNightShift((s) => s.results.suggestions);
+  // Vorschläge der Nachtschicht: Neueste zuerst, ohne Gelesenes und Weggeklicktes
+  const night = useMemo((): ScoredBook[] => {
+    const dismissed = new Set(signals.filter((s) => s.verdict === 'dislike').map((s) => s.bookId));
+    return [...suggestions]
+      .reverse()
+      .map((x): Book => ({ id: x.id, title: x.title, authors: x.authors, year: x.year, coverId: x.coverId, subjects: [], languages: [], source: 'openlibrary' }))
+      .filter((b) => !readIndex.has(b) && !dismissed.has(b.id))
+      .slice(0, 18)
+      .map((b) => ({ book: b, score: 0, match: 0, reasons: [{ kind: 'ai' as const, label: suggestions.find((x) => x.id === b.id)?.why ?? '' }] }));
+  }, [suggestions, readIndex, signals]);
 
   useEffect(() => {
     if (!usable || !profile) return;
@@ -70,6 +83,7 @@ export default function ForYou() {
   }
 
   const shown = uniqueAcrossSections(sections);
+
   const genres = topGenres(profile, 5);
 
   return (
@@ -90,7 +104,7 @@ export default function ForYou() {
             <div className="chips mt-1">
               {genres.map((g) => (
                 <span key={g.id} className="tag accent">
-                  {g.emoji} {g.label}
+                  {g.label}
                 </span>
               ))}
               {profile.topConcepts.slice(0, 8).map((c) => (
@@ -111,6 +125,9 @@ export default function ForYou() {
         </div>
       </div>
 
+      {night.length > 0 && (
+        <BookRow title="Über Nacht gefunden" subtitle="Von der Nachtschicht vorgeschlagen – mit dem restlichen KI-Kontingent des Tages." items={night} origin="Nachtschicht" />
+      )}
       {shown.map((s) => (
         <BookRow key={s.id} title={s.title} subtitle={s.subtitle} items={s.items} origin="Für dich" />
       ))}

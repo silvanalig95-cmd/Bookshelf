@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { BookGrid } from '../components/BookCard';
 import { BookSearchBox } from '../components/BookSearchBox';
 import { BarList, ColumnChart } from '../components/Charts';
+import { NightAnalysis } from '../components/NightAnalysis';
 import { Cover } from '../components/Cover';
 import { Empty, ProgressBar } from '../components/Feedback';
 import { StarInput } from '../components/Stars';
@@ -13,6 +14,7 @@ import { normalize } from '../lib/text';
 import type { LibraryEntry, Shelf } from '../lib/types';
 import { useEnrichment } from '../store/enrichment';
 import { useLibrary } from '../store/library';
+import { useNightShift } from '../store/nightShift';
 import { useSettings } from '../store/settings';
 import { useSignals } from '../store/signals';
 import { useSync } from '../store/sync';
@@ -249,6 +251,7 @@ function Wishlist() {
 function ReadingDna() {
   const entries = useLibraryEntries();
   const profile = useProfile();
+  const analysis = useNightShift((s) => s.results.analysis);
   const stats = useMemo(() => computeStats(entries), [entries]);
   const persona = useMemo(() => readingPersona(stats), [stats]);
   if (!stats.read) {
@@ -264,11 +267,18 @@ function ReadingDna() {
   const maxConcept = profile?.topConcepts[0]?.weight ?? 1;
   return (
     <div className="stack" style={{ gap: 18 }}>
-      <div className="card" style={{ background: 'linear-gradient(135deg, var(--accent-soft), var(--gold-soft))', borderColor: 'transparent' }}>
+      <div className="card">
         <p className="eyebrow">Deine Lesepersönlichkeit</p>
         <h2>{persona.title}</h2>
         <p className="mb-0">{persona.text}</p>
       </div>
+
+      {analysis && (
+        <div className="card">
+          <p className="eyebrow">Analyse der Nachtschicht</p>
+          <NightAnalysis analysis={analysis} />
+        </div>
+      )}
 
       <div className="stat-tiles">
         <Tile label="Gelesene Bücher" value={stats.read.toLocaleString('de-CH')} sub={`${stats.currentlyReading} gerade, ${stats.toRead} geplant`} />

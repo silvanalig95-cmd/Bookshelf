@@ -8,6 +8,7 @@ import { annasArchiveUrl, ANNAS_ARCHIVE_MIRRORS } from '../lib/shops';
 import type { LanguagePreference, Region } from '../lib/types';
 import { useSettings, type AiModel, type AiProvider, type GeminiModel, type Theme } from '../store/settings';
 import { pullEverything, runSync, setSyncEnabled, useSync } from '../store/sync';
+import { useNightShift } from '../store/nightShift';
 import { toast } from '../store/ui';
 
 const SHOPS: Record<Region, Array<{ id: string; label: string }>> = {
@@ -326,6 +327,7 @@ export default function Settings() {
           </>
         )}
         <FallbackChannels server={server} channels={ai.channels ?? []} />
+        <NightShiftSettings />
         <div className="btn-row">
           <button className="btn" onClick={testAi} disabled={!ai.available}>
             Verbindung testen
@@ -567,6 +569,70 @@ function FallbackChannels({ server, channels }: { server?: LocalApiStatus; chann
             </div>
           );
         })}
+    </div>
+  );
+}
+
+/** Nachtschicht: Stand und Ergebnisse, Start auf Knopfdruck. */
+function NightShiftSettings() {
+  const { available, loaded, status, results, load, start } = useNightShift();
+  const [message, setMessage] = useState('');
+  useEffect(() => {
+    void load();
+  }, [load]);
+  if (!loaded) return null;
+  const time = (t: number) => new Date(t).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' });
+  const reasons: Record<string, string> = {
+    quota: 'Tageskontingent aller Gemini-Modelle aufgebraucht',
+    tasks: 'nichts mehr zu tun',
+    window: 'Tageswechsel bei Google erreicht',
+    active: 'pausiert, weil die KI gerade in der App genutzt wurde',
+    errors: 'wegen wiederholter Fehler abgebrochen',
+  };
+  return (
+    <div className="mt-2">
+      <div className="divider" />
+      <span className="label">Nachtschicht</span>
+      {!available ? (
+        <p className="small muted mt-1">
+          Nutzt am Ende des Google-Tages das restliche Gemini-Kontingent für deine Bibliothek. Dafür braucht es die Docker-Installation mit GEMINI_API_KEY auf dem
+          Server (siehe deploy/DOCKER.md).
+        </p>
+      ) : (
+        <>
+          <p className="small mt-1">
+            Ab {status?.startHour ?? 22}:00 bis zum Tageswechsel bei Google ({status ? time(status.window.reset) : '09:00'} Uhr) nutzt der Server das restliche
+            Gemini-Kontingent des Tages: Kurzbeschreibungen für Merkliste und „Will ich lesen“, Schlagwörter für deine Bücher (schärfen das Profil), eine
+            Lese-Analyse (unter Bibliothek → Lese-DNA) und neue Vorschläge (unter „Für dich“). Benutzt du die KI selbst, hat das Vorrang.
+          </p>
+          {status && status.day && (
+            <p className="small muted mb-0">
+              {status.running ? 'Läuft gerade' : `Zuletzt (${status.day})`}: {status.requests} Anfragen – {status.made.blurbs} Kurzbeschreibungen, {status.made.themes}{' '}
+              Bücher verschlagwortet, {status.made.analysis ? 'Analyse erstellt' : 'keine neue Analyse'}, {status.made.suggestions} Vorschläge
+              {!status.running && status.reason ? ` · ${reasons[status.reason] ?? status.reason}` : ''}.
+              {status.state === 'error' && status.lastError ? ` Letzter Fehler: ${status.lastError}` : ''}
+            </p>
+          )}
+          <p className="small muted">
+            Insgesamt: {Object.keys(results.themes).length} Bücher mit zusätzlichen Schlagwörtern, {results.suggestions.length} Vorschläge
+            {results.analysis ? `, Analyse vom ${new Date(results.analysis.at).toLocaleDateString('de-CH')}` : ''}.
+          </p>
+          <div className="btn-row">
+            <button
+              className="btn btn-sm"
+              disabled={status?.running}
+              onClick={async () => {
+                const err = await start();
+                setMessage(err ?? 'Gestartet – das kann eine Weile dauern. Ergebnisse erscheinen nach und nach.');
+              }}
+            >
+              Jetzt starten
+            </button>
+            <span className="help">Verbraucht das restliche Kontingent sofort – danach antworten bis {status ? time(status.window.reset) : '09:00'} Uhr die Ausweich-Kanäle.</span>
+          </div>
+          {message && <p className="small mt-1 mb-0">{message}</p>}
+        </>
+      )}
     </div>
   );
 }

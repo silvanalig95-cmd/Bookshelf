@@ -2407,9 +2407,20 @@ kbd {
 }
 .ai-why {
   margin: 4px 0 0;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   line-height: 1.4;
-  color: var(--violet);
+  color: var(--ink-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.night-analysis h3 {
+  margin: 14px 0 4px;
+}
+.night-analysis p {
+  margin: 0 0 8px;
+  line-height: 1.6;
 }
 
 /* Grid-Kinder dürfen schrumpfen – verhindert horizontales Scrollen auf dem Handy */
