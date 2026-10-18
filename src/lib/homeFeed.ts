@@ -6,7 +6,7 @@
  * Gut Bewertetes kommt nach vorn; kürzlich gesehene Bücher machen Platz (staleness) und dürfen nach
  * ein, zwei Wochen wiederkommen – lange Ignoriertes nur noch selten.
  */
-import { ageWeight, bayesRating, discoveryPrior, hasGerman } from './discovery';
+import { ageWeight, bayesRating, discoveryPrior, hasGerman, limitRare } from './discovery';
 import { rotate } from './freshness';
 import { settle } from './http';
 import { docToBook, searchWorks } from './openLibrary';
@@ -85,7 +85,7 @@ export function rankForHome(books: Book[], ctx: HomeRankContext): ScoredBook[] {
     if (!taste && bayes >= 4.05 && (b.ratingsCount ?? 0) >= 5) reasons.push({ kind: 'rating', label: `★ ${b.rating!.toFixed(1)}` });
     return { book: b, score: base + (taste ? taste.score * 3 : 0), match: 0, reasons };
   });
-  const rotated = rotate(scored, ctx.staleness, { day: ctx.day, jitter: 0.25 }).sort((a, b) => b.score - a.score);
+  const rotated = limitRare(rotate(scored, ctx.staleness, { day: ctx.day, jitter: 0.25 }).sort((a, b) => b.score - a.score), 0.15, ctx.max ?? 16);
   // Höchstens ein Buch je Autor:in pro Reihe
   const out: ScoredBook[] = [];
   for (const s of rotated) {

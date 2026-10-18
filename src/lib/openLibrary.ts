@@ -2,6 +2,7 @@
  * Zugriff auf die freie Open-Library-API (keine Anmeldung, CORS erlaubt).
  * Doku: https://openlibrary.org/developers/api
  */
+import { withLearnedSubjects } from './learned';
 import { fetchJson } from './http';
 import { toIsbn13 } from './isbn';
 import { iso1to2 } from './taxonomy';
@@ -172,7 +173,8 @@ export function docToBook(doc: OLSearchDoc, preferLang: LangCode = 'ger'): Book 
     authorKeys: doc.author_key,
     year: doc.first_publish_year,
     coverId: (useEditionTitle && freshEditionCover ? edition?.cover_i : undefined) || doc.cover_i || edition?.cover_i,
-    subjects: doc.subject ?? [],
+    // Von der KI gelernte Schlagwörter (Wissensspeicher) ergänzen dünn verschlagwortete Bücher
+    subjects: withLearnedSubjects(workIdFromKey(doc.key), doc.subject ?? []),
     places: doc.place,
     times: doc.time,
     people: doc.person,

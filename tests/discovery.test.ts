@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildQueryPlans, DEFAULT_PARAMS, describeSearch, effectiveParams, interpretWish, mergeBooks, scoreBook, type DiscoveryParams } from '../src/lib/discovery';
+import { buildQueryPlans, DEFAULT_PARAMS, describeSearch, effectiveParams, interpretWish, isRareKind, limitRare, mergeBooks, scoreBook, type DiscoveryParams } from '../src/lib/discovery';
 import { buildReadIndex } from '../src/store/library';
 import { book, entry } from './helpers';
 
@@ -107,5 +107,17 @@ describe('Zusammenführen & Beschreiben', () => {
   it('fasst die Suche lesbar zusammen', () => {
     const bits = describeSearch(params({ genres: ['krimi'], moods: ['duester'], places: ['skandinavien'], pagesMax: 300 }));
     expect(bits).toEqual(expect.arrayContaining(['Krimi', 'düster', 'spielt in Skandinavien', 'unter 300 Seiten']));
+  });
+});
+
+describe('Ältere und wenig bekannte Bücher sind die Ausnahme', () => {
+  const book = (id: string, year: number, popularity: number) => ({ book: { id, title: id, authors: ['A'], subjects: [], languages: [], year, popularity, ratingsCount: popularity / 10, editionCount: 5, source: 'openlibrary' as const } });
+  it('lässt unter den ersten Plätzen nur wenige ältere oder obskure Bücher', () => {
+    const list = [book('alt1', 1952, 3000), book('obskur1', 2015, 2), book('neu1', 2018, 3000), book('alt2', 1960, 3000), book('neu2', 2010, 900), book('obskur2', 2020, 1), book('neu3', 2021, 500)];
+    expect(isRareKind(list[0].book)).toBe(true);
+    expect(isRareKind(list[2].book)).toBe(false);
+    const ordered = limitRare(list, 0.15, 7).map((x) => x.book.id);
+    expect(ordered.slice(0, 4)).toEqual(['alt1', 'neu1', 'neu2', 'neu3']);
+    expect(ordered).toHaveLength(7); // nichts geht verloren, es rutscht nur nach hinten
   });
 });

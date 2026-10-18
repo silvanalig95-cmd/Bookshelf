@@ -10,6 +10,7 @@ import { AppFooter, UpdateBanner } from './components/UpdateBanner';
 import { useLibrary } from './store/library';
 import { useSettings } from './store/settings';
 import { toast } from './store/ui';
+import { startKnowledge } from './store/knowledge';
 import { startNightShift } from './store/nightShift';
 import { startSync } from './store/sync';
 import { useWishlist } from './store/wishlist';
@@ -105,6 +106,7 @@ export default function App() {
   useEffect(() => {
     startSync();
     startNightShift();
+    startKnowledge();
     // Doppelte Ausgaben aus früheren Importen gleich beim Start zusammenführen
     const dedupe = () => {
       const n = useLibrary.getState().dedupe();

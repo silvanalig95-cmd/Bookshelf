@@ -5,16 +5,21 @@
  * Googles Tageskontingent setzt sich um Mitternacht Pacific Time zurück (in der Schweiz meist
  * 9 Uhr morgens). Die Nachtschicht läuft ab dem Abend (Standard 22 Uhr Ortszeit) bis zu diesem
  * Tageswechsel und arbeitet der Reihe nach ab:
- *   1. deutsche Kurzbeschreibungen für Bücher auf der Merkliste und „Will ich lesen“
- *   2. Schlagwörter (Themen, Ton, Schauplatz) für Bücher der Bibliothek – schärft das Geschmacksprofil
- *   3. eine Lese-Analyse (einmal pro Tag, wenn sich die Bibliothek geändert hat)
- *   4. neue Vorschläge, auf Open Library nachgeschlagen, jeweils mit Kurzbeschreibung
+ *   1. Kurzbeschreibungen für Bücher, die du geöffnet hast, die aber noch keine haben
+ *   2. deutsche Kurzbeschreibungen für Bücher auf der Merkliste und „Will ich lesen“
+ *   3. Schlagwörter (Themen, Ton, Schauplatz) für Bücher der Bibliothek – schärft das Geschmacksprofil
+ *   4. eine Lese-Analyse (einmal pro Tag, wenn sich die Bibliothek geändert hat)
+ *   5. neue Vorschläge, auf Open Library nachgeschlagen, jeweils mit Kurzbeschreibung
+ *   6. Schlagwörter für alle Bücher im Wissensspeicher (zwölf pro Anfrage – verbessern die
+ *      Empfehlungen überall) und Kurzbeschreibungen für Bücher, die dir angezeigt wurden
+ *   7. weitere Vorschlagsrunden
  * Sie hört auf, wenn alle Gemini-Modelle ihr Tageskontingent aufgebraucht haben, und pausiert,
  * solange jemand die KI in der App benutzt.
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { BlurbStore } from './blurbStore.ts';
+import type { KnowledgeStore } from './knowledge.ts';
 import { syncFileName, type SyncStore } from './syncStore.ts';
 
 const GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -27,7 +32,16 @@ const THINKING: Record<string, string[]> = {
   'gemini-3.6-flash': ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'],
   'gemini-3.5-flash-lite': ['MINIMAL', 'LOW', 'MEDIUM', 'HIGH'],
 };
-const MAX_SUGGESTIONS = 150;
+// Vorschläge werden nicht mehr verworfen – nur als Schutz für den Speicher begrenzt
+const MAX_SUGGESTIONS = 2000;
+
+/** Der Auftrag für Kurzbeschreibungen – gleich lautend in src/lib/aiPrompts.ts (ein Test prüft das). */
+export const BLURB_INSTRUCTIONS = [
+  'Schreib auf Deutsch zwei Absätze:',
+  '1. Worum es geht – 4 bis 6 Sätze, spoilerfrei: Ausgangslage und Hauptfiguren, Schauplatz und Zeit, worum es im Kern geht, Ton und Stil – und was das Buch besonders macht. Konkret statt allgemein; keine Wendungen, kein Ende.',
+  '2. Ein Satz, der mit „Passt zu dir, weil …“ oder „Eher nicht dein Fall, weil …“ beginnt und sich auf den Lesekontext stützt. Ohne Lesekontext: „Für alle, die …“.',
+  'Kennst du das Buch nicht sicher, stütze dich nur auf das Material oben und sag ehrlich, wenn es dünn ist. Keine Überschriften, keine Aufzählung, kein [[…]]-Format. Schweizer Rechtschreibung (ss statt ß).',
+];
 const THEME_BATCH = 12;
 
 /* ---------- Zeitfenster ---------- */
@@ -123,7 +137,10 @@ export interface Suggestion {
 export interface NightResults {
   /** Eintrag der Bibliothek → zusätzliche Schlagwörter */
   themes: Record<string, { subjects: string[]; at: number }>;
+  /** Die neueste Lese-Analyse … */
   analysis?: { text: string; model: string; at: number; rev: number };
+  /** … und alle früheren (nichts geht verloren). */
+  analyses?: Array<{ text: string; model: string; at: number; rev: number }>;
   suggestions: Suggestion[];
 }
 
@@ -163,6 +180,8 @@ export interface NightShiftOptions {
   users: Array<string | null>;
   sync: SyncStore;
   blurbs: BlurbStore;
+  /** Wissensspeicher: geöffnete und gesehene Bücher, gelernte Schlagwörter. */
+  knowledge?: KnowledgeStore;
   startHour?: number;
   timeZone?: string;
   clock?: () => number;
@@ -198,6 +217,7 @@ export class NightShift {
   private status: NightStatus;
   /** Was in dieser Nacht nicht klappte, wird nicht endlos wiederholt. */
   private readonly failedIds = new Set<string>();
+  private suggestRounds = 0;
 
   constructor(opts: NightShiftOptions) {
     this.opts = opts;
@@ -300,6 +320,7 @@ export class NightShift {
     if (this.status.day !== day) {
       this.status = this.freshStatus(day);
       this.failedIds.clear();
+      this.suggestRounds = 0;
     }
     this.status.state = 'running';
     this.status.reason = undefined;
@@ -350,37 +371,79 @@ export class NightShift {
     return Object.values(this.opts.sync.records(user, 'library')).filter((e): e is Entry => Boolean(e && typeof e === 'object' && 'title' in (e as object)));
   }
 
+  /** Bücher, die nicht mehr vorgeschlagen werden sollen („Nicht meins“, ausgeblendet). */
+  private dismissed(user: string | null): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const [id, v] of Object.entries(this.opts.sync.records(user, 'signals') as Record<string, { verdict?: string; title?: string }>)) {
+      if (v?.verdict === 'dislike' || v?.verdict === 'hide') out.set(id, v.title ?? '');
+    }
+    return out;
+  }
+
   /** Die nächste sinnvolle Aufgabe für dieses Login – oder keine mehr. */
   private nextTask(user: string | null): (() => Promise<void>) | undefined {
     const blurbs = this.opts.blurbs;
+    const knowledge = this.opts.knowledge;
     const results = this.results(user);
     const library = this.library(user);
     const failed = this.failedIds;
+    const needsBlurb = (id: string) => !id.startsWith('ai:') && !blurbs.get(user, id) && !failed.has(`blurb:${id}`);
+    const stats = knowledge?.stats(user) ?? {};
+    const fromCatalog = (id: string) => {
+      const b = knowledge?.book(id);
+      return b ? { id, title: b.title, author: b.authors[0] ?? '', year: b.year, subjects: [...(b.learned?.subjects ?? []), ...b.subjects].slice(0, 15) } : undefined;
+    };
 
-    // 1. Kurzbeschreibungen für Merkliste und „Will ich lesen“
+    // 1. Geöffnete Bücher ohne Kurzbeschreibung (tagsüber reichte das Kontingent nicht) – die neuesten zuerst
+    const opened = Object.entries(stats)
+      .filter(([id, s]) => s.opened > 0 && needsBlurb(id))
+      .sort((a, b) => (b[1].lastOpened ?? 0) - (a[1].lastOpened ?? 0))
+      .map(([id]) => fromCatalog(id))
+      .find(Boolean);
+    if (opened) return () => this.blurbTask(user, opened, library);
+
+    // 2. Kurzbeschreibungen für Merkliste und „Will ich lesen“
     const wish = Object.values(this.opts.sync.records(user, 'wishlist')) as WishItem[];
     const wanted = [
       ...wish.filter((w) => w?.book?.id).map((w) => ({ id: w.book.id, title: w.book.title, author: w.book.authors?.[0] ?? '', year: w.book.year, subjects: w.book.subjects ?? [] })),
       ...library
         .filter((e) => e.shelf === 'to-read' && e.workKey)
         .map((e) => ({ id: e.workKey!.replace('/works/', ''), title: e.title, author: e.authors?.[0] ?? '', year: e.year, subjects: e.subjects ?? [] })),
-    ].filter((b) => !b.id.startsWith('ai:') && !blurbs.get(user, b.id) && !failed.has(`blurb:${b.id}`));
+    ].filter((b) => needsBlurb(b.id));
     if (wanted.length) return () => this.blurbTask(user, wanted[0], library);
 
-    // 2. Schlagwörter für die Bibliothek – schlecht verschlagwortete Bücher zuerst
+    // 3. Schlagwörter für die Bibliothek – schlecht verschlagwortete Bücher zuerst
     const untagged = library
       .filter((e) => !results.themes[e.id] && !failed.has(`themes:${e.id}`))
       .sort((a, b) => (a.subjects?.length ?? 0) - (b.subjects?.length ?? 0));
     if (untagged.length) return () => this.themesTask(user, untagged.slice(0, THEME_BATCH));
 
-    // 3. Lese-Analyse, wenn sich die Bibliothek seit der letzten geändert hat (höchstens täglich)
+    // 4. Lese-Analyse, wenn sich die Bibliothek seit der letzten geändert hat (höchstens täglich)
     const rev = this.opts.sync.revision(user);
     const stale = !results.analysis || (results.analysis.rev !== rev && this.clock() - results.analysis.at > 20 * 3600_000);
     if (library.filter((e) => e.shelf === 'read').length >= 5 && stale && !failed.has('analysis')) return () => this.analysisTask(user, library, rev);
 
-    // 4. Vorschläge ohne Kurzbeschreibung nachliefern, sonst neue Vorschläge suchen
-    const pending = results.suggestions.find((s) => !blurbs.get(user, s.id) && !failed.has(`blurb:${s.id}`));
+    // 5. Vorschläge ohne Kurzbeschreibung nachliefern; eine erste Vorschlagsrunde pro Nacht
+    const pending = results.suggestions.find((s) => needsBlurb(s.id));
     if (pending) return () => this.blurbTask(user, { id: pending.id, title: pending.title, author: pending.authors[0] ?? '', year: pending.year, subjects: [] }, library);
+    if (library.length && !failed.has('suggest') && this.suggestRounds === 0) return () => this.suggestTask(user, library, wish);
+
+    if (knowledge) {
+      const dismissed = this.dismissed(user);
+      const read = new Set(library.filter((e) => e.shelf !== 'to-read' && e.workKey).map((e) => e.workKey!.replace('/works/', '')));
+      const recent = Object.entries(stats)
+        .filter(([id]) => !dismissed.has(id) && !read.has(id))
+        .sort((a, b) => Math.max(b[1].lastSeen ?? 0, b[1].lastOpened ?? 0) - Math.max(a[1].lastSeen ?? 0, a[1].lastOpened ?? 0))
+        .map(([id]) => id);
+      // 6a. Schlagwörter für Bücher aus dem Wissensspeicher – zwölf auf einmal, das Gesehene zuerst
+      const unlearned = recent.filter((id) => !knowledge.book(id)?.learned && !failed.has(`learn:${id}`)).slice(0, THEME_BATCH);
+      if (unlearned.length >= 4 || (unlearned.length && !recent.some((id) => needsBlurb(id)))) return () => this.learnTask(unlearned);
+      // 6b. Kurzbeschreibungen für Bücher, die dir angezeigt wurden – damit sie da sind, wenn du sie öffnest
+      const seen = recent.map((id) => (needsBlurb(id) ? fromCatalog(id) : undefined)).find(Boolean);
+      if (seen) return () => this.blurbTask(user, seen, library);
+    }
+
+    // 7. Weitere Vorschlagsrunden, solange sie Neues bringen
     if (library.length && !failed.has('suggest')) return () => this.suggestTask(user, library, wish);
     return undefined;
   }
@@ -402,14 +465,11 @@ export class NightShift {
         description ? `Klappentext (evtl. in einer anderen Sprache):\n${description.slice(0, 2000)}` : '',
         b.subjects.length ? `Schlagwörter: ${b.subjects.slice(0, 15).join(', ')}` : '',
         '',
-        'Schreib auf Deutsch, zwei kurze Absätze:',
-        '1. Worum es geht – 3 bis 5 Sätze, spoilerfrei: Ausgangslage, Thema, Ton und Stil. Keine Wendungen, kein Ende.',
-        '2. Ein Satz, der mit „Passt zu dir, weil …“ oder „Eher nicht dein Fall, weil …“ beginnt und sich auf den Lesekontext stützt. Ohne Lesekontext: „Für alle, die …“.',
-        'Kennst du das Buch nicht sicher, stütze dich nur auf das Material oben und sag ehrlich, wenn es dünn ist. Keine Überschriften, keine Aufzählung.',
+        ...BLURB_INSTRUCTIONS,
       ]
         .filter(Boolean)
         .join('\n');
-      const system = `Du schreibst kurze deutsche Buchbeschreibungen für die App „Lesekompass“: klar, konkret, ohne Werbesprache. Schweizer Rechtschreibung (ss statt ß).\n\nLesekontext der Person:\n${compactContext(library)}`;
+      const system = `Du schreibst deutsche Kurzbeschreibungen für die App „Lesekompass“: konkret und gehaltvoll, ohne Werbesprache.\n\nLesekontext der Person:\n${compactContext(library)}`;
       const reply = await this.gemini({ system, prompt, chain: LIGHT_CHAIN, maxTokens: 2048 });
       if (!this.opts.blurbs.set(user, b.id, reply.text.trim(), modelLabel(reply.model))) throw new Error('Kurzbeschreibung unbrauchbar');
       this.status.made.blurbs++;
@@ -434,9 +494,34 @@ export class NightShift {
           .filter((s) => typeof s === 'string' && s.length > 2 && s.length < 60)
           .slice(0, 8);
         results.themes[e.id] = { subjects, at: this.clock() };
+        if (e.workKey) this.opts.knowledge?.learn(e.workKey.replace('/works/', ''), subjects, reply.model, { title: e.title, authors: e.authors ?? [], year: e.year });
       });
       this.saveResults(user, results);
       this.status.made.themes += batch.length;
+      this.saveStatus();
+    });
+  }
+
+  /** Schlagwörter für Bücher aus dem Wissensspeicher – zwölf pro Anfrage, verbessern die Empfehlungen überall. */
+  private async learnTask(ids: string[]) {
+    const knowledge = this.opts.knowledge;
+    if (!knowledge) return;
+    await this.withFailureMark(`learn:${ids[0]}`, async () => {
+      const books = ids.map((id) => ({ id, b: knowledge.book(id)! })).filter((x) => x.b);
+      const list = books.map((x, i) => `${i + 1}. „${x.b.title}“ – ${x.b.authors[0] ?? '?'}${x.b.year ? ` (${x.b.year})` : ''}`).join('\n');
+      const prompt = `Gib für jedes Buch 5 bis 8 englische Schlagwörter im Stil von Open Library / Library of Congress: Genre (z. B. "Detective and mystery stories", "Fantasy fiction"), Themen (z. B. "Grief", "Families"), Ton (z. B. "Humorous stories", "Psychological fiction") und Schauplatz (z. B. "Sweden"). Nur Bücher, die du sicher kennst – sonst eine leere Liste.\n\n${list}`;
+      const schema = {
+        type: 'object',
+        properties: { books: { type: 'array', items: { type: 'object', properties: { nr: { type: 'integer' }, subjects: { type: 'array', items: { type: 'string' } } }, required: ['nr', 'subjects'] } } },
+        required: ['books'],
+      };
+      const reply = await this.gemini({ system: 'Du bist eine sorgfältige Bibliothekarin.', prompt, chain: LIGHT_CHAIN, schema, maxTokens: 4096 });
+      const data = JSON.parse(reply.text) as { books?: Array<{ nr: number; subjects: string[] }> };
+      books.forEach((x, i) => {
+        const subjects = (data.books?.find((b) => b.nr === i + 1)?.subjects ?? []).filter((s) => typeof s === 'string' && s.length > 2 && s.length < 60).slice(0, 8);
+        knowledge.learn(x.id, subjects, reply.model);
+      });
+      this.status.made.themes += books.length;
       this.saveStatus();
     });
   }
@@ -454,6 +539,7 @@ Sei konkret und beziehe dich auf Titel aus der Liste. Bei den fünf Büchern: nu
       const reply = await this.gemini({ system: 'Du bist eine belesene, warmherzige Buchhändlerin, die ihre Stammkundschaft genau kennt.', prompt, chain: MAIN_CHAIN, maxTokens: 6000 });
       const results = this.results(user);
       results.analysis = { text: reply.text.trim(), model: modelLabel(reply.model), at: this.clock(), rev };
+      results.analyses = [...(results.analyses ?? []), results.analysis];
       this.saveResults(user, results);
       this.status.made.analysis++;
       this.saveStatus();
@@ -461,9 +547,10 @@ Sei konkret und beziehe dich auf Titel aus der Liste. Bei den fünf Büchern: nu
   }
 
   private async suggestTask(user: string | null, library: Entry[], wish: WishItem[]) {
+    this.suggestRounds++;
     await this.withFailureMark('suggest', async () => {
       const results = this.results(user);
-      const avoid = [...library.map((e) => e.title), ...wish.map((w) => w.book?.title ?? ''), ...results.suggestions.map((s) => s.title)].filter(Boolean);
+      const avoid = [...library.map((e) => e.title), ...wish.map((w) => w.book?.title ?? ''), ...results.suggestions.map((s) => s.title), ...this.dismissed(user).values()].filter(Boolean);
       const prompt = `${compactContext(library)}
 
 Schlage 10 Bücher vor, die diese Person noch nicht kennt und die gut zu ihr passen – abwechslungsreich, gern auch weniger bekannte, aber keine Obskuritäten. Nur Bücher, die es wirklich gibt. Deutscher Titel, falls es eine deutsche Ausgabe gibt.
@@ -487,6 +574,7 @@ Nicht vorschlagen (schon bekannt): ${avoid.slice(-400).join(' | ')}`;
         const found = await this.resolve(rec.title, rec.author);
         if (!found || results.suggestions.some((s) => s.id === found.id) || library.some((e) => e.workKey === `/works/${found.id}`)) continue;
         results.suggestions.push({ ...found, why: String(rec.why ?? '').slice(0, 300), at: this.clock() });
+        this.opts.knowledge?.report(user, [{ id: found.id, title: found.title, authors: found.authors, year: found.year, coverId: found.coverId, subjects: [], event: 'suggested' }]);
         known.add(normalize(rec.title));
         added++;
       }

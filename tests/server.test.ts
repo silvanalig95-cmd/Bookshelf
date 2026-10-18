@@ -80,7 +80,7 @@ describe('Server ohne Login', () => {
 
   it('hat die lokale API', async () => {
     const r = await call(server, '/api/status');
-    expect(JSON.parse(r.body)).toEqual({ goodreads: true, ai: false, gemini: false, llm: { mistral: false, groq: false, openrouter: false }, sync: false, blurbs: false, nightShift: false, user: null });
+    expect(JSON.parse(r.body)).toEqual({ goodreads: true, ai: false, gemini: false, llm: { mistral: false, groq: false, openrouter: false }, sync: false, blurbs: false, nightShift: false, knowledge: false, user: null });
   });
 });
 

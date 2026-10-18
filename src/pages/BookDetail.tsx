@@ -24,6 +24,7 @@ import type { AiConfig } from '../lib/aiPrompts';
 import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
 import { useImpressions } from '../store/impressions';
 import { autoBlurb, generateBlurb, lookupBlurb, useBlurbs } from '../store/blurbs';
+import { reportBook } from '../store/knowledge';
 import { useNightShift } from '../store/nightShift';
 import { FORMAT_LABEL, ownedLabel, useOwned, type OwnedFormat } from '../store/owned';
 import { hideBook, useSignals } from '../store/signals';
@@ -123,7 +124,9 @@ export default function BookDetail() {
   const cached = recallBook(id);
   const book = loaded?.book ?? cached;
   useEffect(() => {
-    if (loaded?.book) rememberBook(loaded.book);
+    if (!loaded?.book) return;
+    rememberBook(loaded.book);
+    reportBook(loaded.book, 'opened');
   }, [loaded?.book]);
 
   const isOL = /^OL\d+W$/.test(id);

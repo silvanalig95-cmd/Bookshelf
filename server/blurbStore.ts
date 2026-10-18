@@ -39,6 +39,14 @@ export class BlurbStore {
     return `${user ?? ''}|${id}`;
   }
 
+  /** Alle Kurzbeschreibungen eines Logins (für den Download). */
+  all(user: string | null): Record<string, Blurb> {
+    const prefix = this.key(user, '');
+    const out: Record<string, Blurb> = {};
+    for (const [k, v] of Object.entries(this.load())) if (k.startsWith(prefix)) out[k.slice(prefix.length)] = v;
+    return out;
+  }
+
   get(user: string | null, id: string): Blurb | undefined {
     return this.load()[this.key(user, id)];
   }

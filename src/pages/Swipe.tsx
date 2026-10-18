@@ -17,6 +17,7 @@ import { fitSentence } from '../lib/aiPrompts';
 import { loadBookTexts, richGermanText, wikiMaterial, type BookTexts } from '../lib/bookTexts';
 import { contentSummary, guessLanguage } from '../lib/wikipedia';
 import { autoBlurb, autoBlurbPaused, prepareBlurb, useBlurbs, type BlurbView } from '../store/blurbs';
+import { reportBook } from '../store/knowledge';
 import { useSettings } from '../store/settings';
 import { useSignals } from '../store/signals';
 import { rememberBook, toast, useUi } from '../store/ui';
@@ -101,6 +102,11 @@ export default function Swipe() {
   const current = deck[0]?.book;
   const currentWhy = deck[0]?.why;
   const next = deck[1]?.book;
+
+  // Jede Karte, die oben liegt, landet im Wissensspeicher
+  useEffect(() => {
+    if (current) reportBook(current, 'seen');
+  }, [current?.id]);
 
   // Das Cover der nächsten Karte schon laden, damit sie sofort da ist
   useEffect(() => {

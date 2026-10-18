@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { createLocalApiHandler, isLocalRequest } from './localApi.ts';
 import { BlurbStore } from './blurbStore.ts';
+import { KnowledgeStore } from './knowledge.ts';
 import { NightShift } from './nightShift.ts';
 import { SyncStore } from './syncStore.ts';
 
@@ -255,11 +256,12 @@ function serveStatic(cfg: ServerConfig, req: IncomingMessage, res: ServerRespons
 /* Server                                                                 */
 /* ------------------------------------------------------------------ */
 
-export function createAppServer(cfg: ServerConfig): Server & { nightShift?: NightShift } {
+export function createAppServer(cfg: ServerConfig): Server & { nightShift?: NightShift; flushStores: () => void } {
   const users = new WeakMap<IncomingMessage, string | null>();
   const failures: Failures = new Map();
   const sync = cfg.dataDir ? new SyncStore(cfg.dataDir) : undefined;
   const blurbs = cfg.dataDir ? new BlurbStore(cfg.dataDir) : undefined;
+  const knowledge = cfg.dataDir ? new KnowledgeStore(cfg.dataDir) : undefined;
   const nightShift =
     sync && blurbs && cfg.dataDir && cfg.geminiApiKey && cfg.nightShift
       ? new NightShift({
@@ -268,6 +270,7 @@ export function createAppServer(cfg: ServerConfig): Server & { nightShift?: Nigh
           users: cfg.users.size ? Array.from(cfg.users.keys()) : [null],
           sync,
           blurbs,
+          knowledge,
           startHour: cfg.nightShift.startHour,
           timeZone: cfg.nightShift.timeZone,
           log: (m) => console.log(m),
@@ -284,6 +287,7 @@ export function createAppServer(cfg: ServerConfig): Server & { nightShift?: Nigh
     userOf: (req) => users.get(req) ?? null,
     blurbs,
     nightShift,
+    knowledge,
   });
   const server = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0];
@@ -300,7 +304,14 @@ export function createAppServer(cfg: ServerConfig): Server & { nightShift?: Nigh
       res.end(err instanceof Error ? err.message : 'Fehler');
     });
   });
-  return Object.assign(server, { nightShift });
+  return Object.assign(server, {
+    nightShift,
+    // Beim Beenden nichts Gelerntes verlieren
+    flushStores: () => {
+      blurbs?.flush();
+      knowledge?.flush();
+    },
+  });
 }
 
 function get(
@@ -407,6 +418,7 @@ async function main() {
   });
   const stop = () => {
     server.nightShift?.stop();
+    server.flushStores();
     server.close(() => process.exit(0));
   };
   process.on('SIGTERM', stop);

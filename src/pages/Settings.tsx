@@ -8,6 +8,7 @@ import { annasArchiveUrl, ANNAS_ARCHIVE_MIRRORS } from '../lib/shops';
 import type { LanguagePreference, Region } from '../lib/types';
 import { useSettings, type AiModel, type AiProvider, type GeminiModel, type Theme } from '../store/settings';
 import { pullEverything, runSync, setSyncEnabled, useSync } from '../store/sync';
+import { loadKnowledge, useKnowledge } from '../store/knowledge';
 import { useNightShift } from '../store/nightShift';
 import { toast } from '../store/ui';
 
@@ -327,7 +328,20 @@ export default function Settings() {
           </>
         )}
         <FallbackChannels server={server} channels={ai.channels ?? []} />
+        <div className="mt-2">
+          <div className="divider" />
+          <label className="toggle">
+            <input type="checkbox" checked={s.autoBlurb} onChange={(e) => s.set({ autoBlurb: e.target.checked })} />
+            <b>Kurzbeschreibungen von selbst schreiben</b>
+          </label>
+          <p className="small muted mt-1">
+            Öffnest du ein Buch oder liegt es oben im Bücher-Stapel und es gibt keinen gehaltvollen deutschen Text (Wikipedia, deutscher Klappentext), schreibt die
+            KI eine Kurzbeschreibung. Das ist eine Anfrage mit rund 1000–2000 Wörtern Material und 200 Wörtern Antwort: im Gratis-Kontingent kostenlos (zählt als
+            eine von den Tagesanfragen), bezahlt wären es etwa 0,1 Rappen. Jede Beschreibung wird gemerkt und nie zweimal erzeugt.
+          </p>
+        </div>
         <NightShiftSettings />
+        <KnowledgeSettings />
         <div className="btn-row">
           <button className="btn" onClick={testAi} disabled={!ai.available}>
             Verbindung testen
@@ -574,6 +588,39 @@ function FallbackChannels({ server, channels }: { server?: LocalApiStatus; chann
 }
 
 /** Nachtschicht: Stand und Ergebnisse, Start auf Knopfdruck. */
+/** Wissensspeicher: was der Server über Bücher gelernt hat und wie der Algorithmus nachjustiert. */
+function KnowledgeSettings() {
+  const { available, summary, tuning } = useKnowledge();
+  useEffect(() => {
+    void loadKnowledge();
+  }, []);
+  if (!available || !summary) return null;
+  const shift = tuning?.fameShift ?? 0;
+  const fame =
+    !tuning || tuning.positives < 8 || tuning.negatives < 8
+      ? `Noch zu wenige Beobachtungen, um die Bekanntheit nachzujustieren (${tuning?.positives ?? 0} geöffnet/gemocht, ${tuning?.negatives ?? 0} übergangen/ausgeblendet – je 8 nötig).`
+      : Math.abs(shift) < 0.05
+        ? 'Du öffnest bekannte und weniger bekannte Bücher etwa gleich oft – die Bekanntheit bleibt, wie sie ist.'
+        : shift > 0
+          ? `Du öffnest und magst eher bekanntere Bücher – die Vorschläge rücken etwas in diese Richtung (+${shift.toFixed(2)}).`
+          : `Du öffnest und magst eher weniger bekannte Bücher – Geheimtipps rücken nach vorne (${shift.toFixed(2)}).`;
+  return (
+    <div className="mt-2">
+      <div className="divider" />
+      <span className="label">Wissensspeicher</span>
+      <p className="small mt-1">
+        Alles, was der Lesekompass über Bücher lernt, bleibt auf deinem Server: {summary.books.toLocaleString('de-CH')} Bücher, davon{' '}
+        {summary.learned.toLocaleString('de-CH')} mit KI-Schlagwörtern (verbessern die Empfehlungen überall). Von dir: {summary.seen.toLocaleString('de-CH')} gesehen,{' '}
+        {summary.opened.toLocaleString('de-CH')} geöffnet.
+      </p>
+      <p className="small muted">{fame}</p>
+      <a className="btn btn-sm" href="./api/wissen/export" download>
+        Wissensdatenbank herunterladen
+      </a>
+    </div>
+  );
+}
+
 function NightShiftSettings() {
   const { available, loaded, status, results, load, start } = useNightShift();
   const [message, setMessage] = useState('');

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { isbnCoverUrl } from '../lib/openLibrary';
 import type { Book, ScoredBook } from '../lib/types';
 import { useImpressions, watchImpression } from '../store/impressions';
+import { reportBook } from '../store/knowledge';
 import { ownedLabel, useOwned } from '../store/owned';
 import { hideBook, useDismissed, useSignals } from '../store/signals';
 import { rememberBook, toast, useUi } from '../store/ui';
@@ -42,7 +43,12 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, o
   const isbn = book.isbns?.[0];
   const ref = useRef<HTMLElement>(null);
   // Gesehen, aber nichts gemacht? Fliesst in die Rotation der Treffer ein (siehe lib/freshness)
-  useEffect(() => (ref.current ? watchImpression(ref.current, () => useImpressions.getState().see(book.id)) : undefined), [book.id]);
+  // … und landet im Wissensspeicher, aus dem der Algorithmus nachlernt
+  useEffect(
+    () => (ref.current ? watchImpression(ref.current, () => useImpressions.getState().see(book.id) && reportBook(book, 'seen')) : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [book.id],
+  );
   const engaged = () => useImpressions.getState().engage(book.id);
   // „Auf Deutsch“ ist der Normalfall – erwähnt wird nur, wenn es keine deutsche Ausgabe gibt
   const why = (scored?.reasons ?? []).filter((r) => r.kind !== 'ai' && r.kind !== 'german').slice(0, maxReasons).map((r) => r.label);

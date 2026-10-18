@@ -13,7 +13,8 @@ const MAX_ENTRIES = 6000;
 interface ImpressionsState {
   /** bookId → [Anzahl, zuletzt gesehen (ms)] */
   seen: Record<string, [number, number]>;
-  see: (id: string, now?: number) => void;
+  /** Zählt eine Sichtung (höchstens alle 6 Stunden) – true, wenn sie gezählt wurde. */
+  see: (id: string, now?: number) => boolean;
   engage: (id: string) => void;
 }
 
@@ -23,7 +24,7 @@ export const useImpressions = create<ImpressionsState>()(
       seen: {},
       see: (id, now = Date.now()) => {
         const prev = get().seen[id];
-        if (prev && now - prev[1] < SIGHTING_GAP) return;
+        if (prev && now - prev[1] < SIGHTING_GAP) return false;
         const next = { ...get().seen, [id]: [(prev ? decayedCount(prev[0], prev[1], now) : 0) + 1, now] as [number, number] };
         const ids = Object.keys(next);
         if (ids.length > MAX_ENTRIES) {
@@ -31,6 +32,7 @@ export const useImpressions = create<ImpressionsState>()(
           for (const old of ids.slice(0, ids.length - MAX_ENTRIES)) delete next[old];
         }
         set({ seen: next });
+        return true;
       },
       engage: (id) => {
         if (!get().seen[id]) return;

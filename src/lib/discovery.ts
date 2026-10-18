@@ -3,6 +3,7 @@
  * Open-Library-Anfragen, führt die Treffer zusammen und bewertet jedes Buch
  * nachvollziehbar (Trefferquote + Begründungen).
  */
+import { learnedFameShift } from './learned';
 import { searchGoogleBooks } from './googleBooks';
 import { settle } from './http';
 import type { WishLookup } from './lookup';
@@ -470,13 +471,44 @@ export function famePrior(book: Book): number {
  * sein, aber nicht die allerbekanntesten. Obskures (kaum gelesen) fällt deutlich zurück, Bekanntes
  * steht vorn, und die ganz grossen Bestseller rutschen leicht nach hinten – die kennt man ohnehin.
  *   Bekanntheit < 1.6 → negativ · 2.4–3.3 → +1 · darüber sanft abnehmend (Harry Potter ≈ −0.2)
+ * Der Bereich verschiebt sich mit dem, was du tatsächlich öffnest und magst (learnedFameShift).
  */
 export function discoveryPrior(book: Book): number {
   if (book.popularity === undefined && book.ratingsCount === undefined && book.editionCount === undefined) return 0;
-  const fame = fameScore(book);
+  const fame = fameScore(book) - learnedFameShift();
   if (fame < 2.4) return clamp((fame - 1.6) / 0.8, -1, 1);
   if (fame <= 3.3) return 1;
   return Math.max(-0.5, 1 - (fame - 3.3) * 1.1);
+}
+
+/** Vor diesem Jahr gilt ein Buch als „älter“. */
+export const OLDER_BEFORE = 1980;
+
+/** Älter (vor 1980) oder kaum bekannt – solche Bücher sollen in Vorschlägen die Ausnahme sein. */
+export function isRareKind(book: Book, now = new Date().getFullYear()): boolean {
+  const known = book.popularity !== undefined || book.ratingsCount !== undefined || book.editionCount !== undefined;
+  if (known && fameScore(book) < 1.9) return true;
+  return Boolean(book.year && book.year < OLDER_BEFORE && now - book.year > 40);
+}
+
+/**
+ * Ältere und wenig bekannte Bücher sollen selten sein: Unter den ersten `window` Plätzen höchstens
+ * `share` davon (mindestens eines); weitere rutschen ans Ende. Sonst bleibt die Reihenfolge.
+ */
+export function limitRare<T extends { book: Book }>(items: T[], share = 0.15, window = 24): T[] {
+  const allowed = Math.max(1, Math.round(Math.min(window, items.length) * share));
+  const head: T[] = [];
+  const tail: T[] = [];
+  let rare = 0;
+  for (const x of items) {
+    if (head.length >= window) tail.push(x);
+    else if (!isRareKind(x.book)) head.push(x);
+    else if (rare < allowed) {
+      rare++;
+      head.push(x);
+    } else tail.push(x);
+  }
+  return [...head, ...tail];
 }
 
 /** Zählt zu den allerbekanntesten Büchern (Welt-Bestseller, Schullektüre). */

@@ -9,7 +9,7 @@
  *  - Über den Tellerrand: verwandte Themen, die du selten liest (Serendipität).
  */
 import { rotate, spreadAuthors } from './freshness';
-import { ageWeight, bayesRating, discoveryPrior, distinctiveSubjects, hasGerman, MIN_RATINGS, mergeBooks } from './discovery';
+import { ageWeight, bayesRating, discoveryPrior, distinctiveSubjects, hasGerman, limitRare, MIN_RATINGS, mergeBooks } from './discovery';
 import { settle } from './http';
 import { docToBook, getSubject, searchWorks, subjectKey, type OLSort } from './openLibrary';
 import { conceptsOf, tasteMatch, type TasteProfile } from './profile';
@@ -53,7 +53,9 @@ export function scoreForProfile(book: Book, ctx: RecContext, extraReasons: Reaso
   const german = hasGerman(book) ? 0.08 : 0;
   // Bekanntheit als spürbarer Zuschlag – Obskures rutscht nach hinten (ausser in „Geheimtipps“, siehe hiddenGems)
   const age = ageWeight(book);
-  const score = tm.similarity + quality * 0.25 + german + Math.min(0.15, tm.authorBonus * 0.04) + discoveryPrior(book) * 0.08 + age.adj * 0.12;
+  // Bekanntes und Neueres spürbar vor Obskurem und Altem (ausser Klassikern) – Ältere und Unbekannte sollen die Ausnahme sein
+  const recent = book.year && book.year >= 2000 ? 0.04 : 0;
+  const score = tm.similarity + quality * 0.25 + german + Math.min(0.15, tm.authorBonus * 0.04) + discoveryPrior(book) * 0.16 + age.adj * 0.2 + recent;
   const reasons: Reason[] = [...extraReasons];
   if (tm.shared.length) reasons.push({ kind: 'taste', label: tm.shared.slice(0, 2).join(', ') });
   if (german) reasons.push({ kind: 'german', label: 'auf Deutsch' });
@@ -66,7 +68,7 @@ export function scoreForProfile(book: Book, ctx: RecContext, extraReasons: Reaso
 /** Gesehenes macht Platz (ctx.fatigue), dann höchstens `perAuthor` Bücher pro Autor:in. */
 function freshOrder(scored: ScoredBook[], ctx: RecContext, perAuthor: number): ScoredBook[] {
   const rotated = ctx.fatigue ? rotate(scored, ctx.fatigue) : scored;
-  return spreadAuthors(rotated.sort((a, b) => b.score - a.score), perAuthor);
+  return limitRare(spreadAuthors(rotated.sort((a, b) => b.score - a.score), perAuthor));
 }
 
 function rank(books: Book[], ctx: RecContext, extra: Reason[] = [], max = 18, perAuthor = 1): ScoredBook[] {
@@ -87,7 +89,7 @@ export async function becauseYouLiked(entry: LibraryEntry, ctx: RecContext): Pro
   const subjects = (specific.length >= 2 ? specific : candidates).slice(0, 5);
   if (subjects.length < 2) return undefined;
   const q = `subject:(${subjects.map(solrPhrase).join(' OR ')})${langClause(ctx.language)}`;
-  const books = mergeBooks(await Promise.all([query(q, 'readinglog', 50, someOffset()), query(q, 'random.hourly', 30)]));
+  const books = mergeBooks(await Promise.all([query(q, 'readinglog', 50, someOffset()), query(`${q} readinglog_count:[150 TO *]`, 'random.hourly', 30)]));
   const refConcepts = new Set(conceptsOf(subjects));
   const items = books
     .filter((b) => b.workKey !== entry.workKey)
@@ -118,8 +120,8 @@ export async function topMatches(ctx: RecContext): Promise<RecSection | undefine
     groups.flatMap((g) => [
       query(`subject:(${g.map(solrPhrase).join(' OR ')}) ratings_count:[${MIN_RATINGS} TO *]${langClause(ctx.language)}`, 'rating', 40, someOffset()),
       query(`subject:(${g.map(solrPhrase).join(' OR ')})${langClause(ctx.language)}`, 'readinglog', 40, someOffset()),
-      // Zufällige Auswahl, die stündlich wechselt – bringt Bücher nach vorne, die sonst nie oben landen
-      query(`subject:(${g.map(solrPhrase).join(' OR ')}) ratings_count:[${MIN_RATINGS} TO *]${langClause(ctx.language)}`, 'random.hourly', 40),
+      // Zufällige Auswahl, die stündlich wechselt – aber nur unter Büchern mit einer gewissen Leserschaft
+      query(`subject:(${g.map(solrPhrase).join(' OR ')}) ratings_count:[${MIN_RATINGS} TO *] readinglog_count:[150 TO *]${langClause(ctx.language)}`, 'random.hourly', 40),
     ]),
   );
   const items = rank(mergeBooks(lists), ctx, [], 24);
@@ -210,12 +212,10 @@ export async function buildRecommendations(entries: LibraryEntry[], ctx: RecCont
 
 export function uniqueAcrossSections(sections: RecSection[]): RecSection[] {
   const seen = new Set<string>();
-  const order = ['top', 'authors', 'gems', 'edge'];
-  const sorted = [...sections].sort((a, b) => {
-    const ia = order.indexOf(a.id) === -1 ? 1.5 : order.indexOf(a.id);
-    const ib = order.indexOf(b.id) === -1 ? 1.5 : order.indexOf(b.id);
-    return ia - ib;
-  });
+  // Geheimtipps (wenig bekannt) bewusst zuletzt – Unbekanntes soll die Ausnahme sein
+  const order = ['top', 'authors', 'edge'];
+  const rank = (id: string) => (id === 'gems' ? 99 : order.indexOf(id) === -1 ? 1.5 : order.indexOf(id));
+  const sorted = [...sections].sort((a, b) => rank(a.id) - rank(b.id));
   // Über alle Reihen höchstens drei Bücher pro Autor:in (ausser in „Mehr von deinen Lieblingsautor:innen“)
   const perAuthor = new Map<string, number>();
   return sorted

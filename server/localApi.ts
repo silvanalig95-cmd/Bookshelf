@@ -11,6 +11,8 @@
  *                              reicht auch Anfragen mit einem Schlüssel aus dem Browser weiter
  * - /api/blurbs              → gemerkte KI-Kurzbeschreibungen (für alle Geräte)
  * - /api/nachtschicht        → Stand und Ergebnisse der Nachtschicht (siehe nightShift.ts)
+ * - /api/wissen              → Wissensspeicher: gesehene/geöffnete Bücher, gelernte Schlagwörter,
+ *                              Feinabstimmung des Algorithmus, Download (siehe knowledge.ts)
  * - /api/sync                → gleicht Bibliothek, Merkliste & Co. zwischen Geräten ab
  *                              (nur wenn ein Datenordner eingerichtet ist, siehe syncStore.ts)
  *
@@ -22,6 +24,7 @@ import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
 import type { Plugin } from 'vite';
 import type { BlurbStore } from './blurbStore.ts';
+import { cleanReport, type KnowledgeStore } from './knowledge.ts';
 import type { NightShift } from './nightShift.ts';
 import { SyncInputError, type SyncStore } from './syncStore.ts';
 
@@ -46,6 +49,8 @@ export interface LocalApiOptions {
   blurbs?: BlurbStore;
   /** Nutzt das restliche Gemini-Kontingent am Ende des Google-Tages. */
   nightShift?: NightShift;
+  /** Wissensspeicher: alle Bücher, die vorkamen, und was über sie gelernt wurde. */
+  knowledge?: KnowledgeStore;
 }
 
 export type LlmProvider = 'mistral' | 'groq' | 'openrouter';
@@ -162,6 +167,7 @@ export function createLocalApiHandler(options: LocalApiOptions) {
           sync: Boolean(options.sync),
           blurbs: Boolean(options.blurbs),
           nightShift: Boolean(options.nightShift),
+          knowledge: Boolean(options.knowledge),
           user: userOf(req),
         });
       }
@@ -177,6 +183,42 @@ export function createLocalApiHandler(options: LocalApiOptions) {
         if (!aiAllowed(req)) return sendJson(res, 403, { error: 'Nur für angemeldete Personen.' });
         void options.nightShift.runNow();
         return sendJson(res, 200, { ok: true });
+      }
+
+      if (url.pathname.startsWith('/api/wissen')) {
+        const k = options.knowledge;
+        if (!k) return sendJson(res, url.pathname === '/api/wissen' ? 200 : 404, { available: false });
+        const user = userOf(req);
+        const signals = () => (options.sync ? (options.sync.records(user, 'signals') as Record<string, { verdict?: string }>) : {});
+        if (url.pathname === '/api/wissen' && req.method === 'GET') {
+          return sendJson(res, 200, { available: true, summary: k.summary(user), tuning: k.tuning(user, signals()) });
+        }
+        if (url.pathname === '/api/wissen' && req.method === 'POST') {
+          if (!isSameOriginJson(req)) return sendJson(res, 403, { error: 'Anfrage von fremder Herkunft abgelehnt.' });
+          let input: unknown;
+          try {
+            input = JSON.parse((await readBody(req, 300_000)).toString('utf8'));
+          } catch {
+            return sendJson(res, 400, { error: 'Ungültiges JSON' });
+          }
+          return sendJson(res, 200, { ok: true, stored: k.report(user, cleanReport(input)) });
+        }
+        if (url.pathname === '/api/wissen/themen') return sendJson(res, 200, k.learnedSubjects(), req);
+        if (url.pathname === '/api/wissen/export') {
+          const data = {
+            exportiert: new Date().toISOString(),
+            hinweis: 'Wissensdatenbank des Lesekompass: Bücher, Statistik, gelernte Schlagwörter, Kurzbeschreibungen, Entscheidungen und Nachtschicht.',
+            ...k.exportFor(user),
+            kurzbeschreibungen: options.blurbs?.all(user) ?? {},
+            entscheidungen: signals(),
+            bibliothek: options.sync?.records(user, 'library') ?? {},
+            besitz: options.sync?.records(user, 'owned') ?? {},
+            nachtschicht: options.nightShift?.results(user),
+          };
+          res.setHeader('content-disposition', `attachment; filename="lesekompass-wissen-${new Date().toISOString().slice(0, 10)}.json"`);
+          return sendJson(res, 200, data, req);
+        }
+        return sendJson(res, 404, { error: 'Unbekannt' });
       }
 
       if (url.pathname === '/api/blurbs') {

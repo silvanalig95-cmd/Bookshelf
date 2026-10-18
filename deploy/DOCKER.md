@@ -98,7 +98,7 @@ Typische Zeilen: `Update auf 1a2b3c4d5e6f läuft und ist gesund` · `NICHT aktua
 
 ## Deine Daten – auf allen Geräten gleich
 
-Bibliothek, Bewertungen, Merkliste, Swipe-Geschmack und die Einstellungen (Region, Shop, Sprache, Anna’s Archive, KI-Modell) liegen **auf dem Server**. Jedes Gerät, das den Lesekompass mit deinem Login öffnet, hat denselben Stand: auf dem Handy gemerkt, am PC sofort da. Goodreads musst du nur einmal verbinden.
+Bibliothek, Bewertungen, Merkliste, Besitz, Stapel-Entscheidungen, Ausgeblendetes und die Einstellungen (Region, Shop, Sprache, Anna’s Archive, KI-Modell) liegen **auf dem Server**. Jedes Gerät, das den Lesekompass mit deinem Login öffnet, hat denselben Stand: auf dem Handy gemerkt, am PC sofort da. Goodreads musst du nur einmal verbinden.
 
 * **Offline:** Ohne Verbindung arbeitest du normal weiter. Änderungen gehen raus, sobald der Server wieder erreichbar ist. Haben zwei Geräte dasselbe Buch geändert, gilt die spätere Änderung.
 * **Pro Gerät** bleiben nur das Design (hell/dunkel) und API-Schlüssel, die du im Browser eingetragen hast.
@@ -118,6 +118,8 @@ docker compose -f deploy/docker-compose.yml cp lesekompass:/srv/lesekompass/data
 ```
 
 Die Datei-Sicherung in der App gibt es weiterhin: **Bibliothek → Goodreads & Daten → Sicherung herunterladen**. Zurückspielen ersetzt dann den Stand auf allen Geräten.
+
+**Wissensspeicher:** Alles, was der Lesekompass über Bücher lernt, bleibt ebenfalls auf dem Server (`data/wissen`): jedes Buch, das dir angezeigt wurde oder das du geöffnet hast, mit Bekanntheit und Schlagwörtern, dazu die von der KI gelernten Schlagwörter (Nachtschicht) und die Kurzbeschreibungen (`data/kurzbeschreibungen.json`). Daraus lernt der Algorithmus laufend nach – etwa, wie bekannt die Vorschläge sein sollen, je nachdem, was du öffnest und was du übergehst. Stand und Download unter **Einstellungen → KI → Wissensspeicher**.
 
 ---
 
@@ -152,6 +154,8 @@ Mit `GEMINI_API_KEY` arbeitet der Server **ab 22 Uhr bis zum Tageswechsel bei Go
 2. Schlagwörter für die Bücher deiner Bibliothek – vor allem für die, die Open Library kaum kennt; das schärft „Für dich“ und die Suche
 3. eine Lese-Analyse (Bibliothek → Lese-DNA), wenn sich die Bibliothek geändert hat
 4. neue Vorschläge, auf Open Library nachgeschlagen und mit Kurzbeschreibung („Für dich“ → „Über Nacht gefunden“)
+5. Schlagwörter für alle Bücher im Wissensspeicher (zwölf pro Anfrage) – sie ergänzen Open Library überall, wo Bücher vorgeschlagen werden
+6. Kurzbeschreibungen auf Vorrat für Bücher, die dir angezeigt wurden – und zuerst für die, die du geöffnet hast, als das Kontingent tagsüber nicht reichte
 
 Sie hört auf, wenn alle Gemini-Modelle ihr Tageskontingent aufgebraucht haben oder nichts mehr zu tun ist, und lässt dir den Vortritt, wenn du die KI gerade selbst nutzt. Wichtig: Sie läuft nur, wenn der Computer mit Docker in dieser Zeit an ist. Stand und „Jetzt starten“ unter **Einstellungen → KI → Nachtschicht**. Anpassen in `deploy\lesekompass.env`:
 

@@ -13,6 +13,7 @@ import {
   runDiscovery,
   type DiscoveryParams,
   type DiscoverySort,
+  limitRare,
 } from '../lib/discovery';
 import { errorMessage, useDebounced, useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { getBookByWorkId } from '../lib/openLibrary';
@@ -231,7 +232,7 @@ export default function Discover() {
   const sorted = useMemo(() => {
     const list = [...results];
     const s = params.sort;
-    if (s === 'match') return authorVariety(list.sort((a, b) => b.score - a.score));
+    if (s === 'match') return authorVariety(list.sort((a, b) => b.score - a.score), explicitlyOld(params));
     if (s === 'rating') return list.sort((a, b) => (b.book.rating ?? 0) * Math.min(1, (b.book.ratingsCount ?? 0) / 5) - (a.book.rating ?? 0) * Math.min(1, (a.book.ratingsCount ?? 0) / 5));
     if (s === 'popular') return list.sort((a, b) => (b.book.popularity ?? 0) - (a.book.popularity ?? 0));
     if (s === 'new') return list.sort((a, b) => (b.book.year ?? 0) - (a.book.year ?? 0));
@@ -732,7 +733,12 @@ export default function Discover() {
  * Nicht zehnmal dieselbe Autorin hintereinander: höchstens zwei Bücher pro Person vorne. Ausser
  * die Suche gilt offensichtlich einer Person (dann stammt fast alles von ihr).
  */
-function authorVariety(list: ScoredBook[]): ScoredBook[] {
+/** Wer ausdrücklich nach Älterem oder Unbekanntem sucht, soll es auch vorne sehen. */
+function explicitlyOld(p: DiscoveryParams): boolean {
+  return p.eras.length > 0 || Boolean(p.yearTo && p.yearTo < 1990) || p.fame < 0;
+}
+
+function authorVariety(list: ScoredBook[], allowRare = false): ScoredBook[] {
   const counts = new Map<string, number>();
   for (const r of list.slice(0, 40)) {
     const a = authorSurname(r.book.authors[0] ?? '');
@@ -740,5 +746,6 @@ function authorVariety(list: ScoredBook[]): ScoredBook[] {
   }
   const top = Math.max(0, ...counts.values());
   if (top >= Math.min(40, list.length) * 0.4) return list;
-  return spreadAuthors(list, 2);
+  // Älteres und Obskures nur als Ausnahme vorne (ausser es wird ausdrücklich danach gefiltert)
+  return allowRare ? spreadAuthors(list, 2) : limitRare(spreadAuthors(list, 2), 0.15, 40);
 }
