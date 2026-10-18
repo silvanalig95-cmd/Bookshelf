@@ -7,7 +7,9 @@ import { Icon, type IconName } from './components/Icon';
 import { Onboarding } from './components/Onboarding';
 import { RatingDialog } from './components/RatingDialog';
 import { AppFooter, UpdateBanner } from './components/UpdateBanner';
+import { useLibrary } from './store/library';
 import { useSettings } from './store/settings';
+import { toast } from './store/ui';
 import { startNightShift } from './store/nightShift';
 import { startSync } from './store/sync';
 import { useWishlist } from './store/wishlist';
@@ -103,6 +105,13 @@ export default function App() {
   useEffect(() => {
     startSync();
     startNightShift();
+    // Doppelte Ausgaben aus früheren Importen gleich beim Start zusammenführen
+    const dedupe = () => {
+      const n = useLibrary.getState().dedupe();
+      if (n) toast(`${n} doppelte ${n === 1 ? 'Ausgabe' : 'Ausgaben'} in deiner Bibliothek zusammengeführt`);
+    };
+    if (useLibrary.persist.hasHydrated()) dedupe();
+    else useLibrary.persist.onFinishHydration(dedupe);
   }, []);
   const location = useLocation();
   const wishCount = useWishlist((s) => Object.keys(s.items).length);

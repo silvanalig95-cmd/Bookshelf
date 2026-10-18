@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand';
 import { localApiStatus } from '../lib/goodreads';
+import { mergeDuplicates } from '../lib/libraryMerge';
 import { emptyMeta, SyncEngine, type SyncAdapter, type SyncMeta } from '../lib/syncEngine';
 import type { SyncCollection, SyncMismatch, SyncRequest, SyncResponse } from '../lib/syncProtocol';
 import type { LibraryEntry, TasteSignal, WishlistItem } from '../lib/types';
@@ -55,7 +56,8 @@ const adapters: SyncAdapter[] = [
   {
     name: 'library',
     read: () => useLibrary.getState().entries,
-    write: (upserts, deletes) => useLibrary.setState({ entries: replaceRecords<LibraryEntry>(useLibrary.getState().entries, upserts, deletes) }),
+    // Auch was von anderen Geräten kommt, wird zu einem Eintrag pro Buch zusammengeführt
+    write: (upserts, deletes) => useLibrary.setState({ entries: mergeDuplicates(replaceRecords<LibraryEntry>(useLibrary.getState().entries, upserts, deletes)).entries }),
     accepts: (id, v) => isObj(v) && v.id === id && typeof v.title === 'string' && Array.isArray(v.authors) && typeof v.shelf === 'string',
   },
   {

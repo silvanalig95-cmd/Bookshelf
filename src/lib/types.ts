@@ -96,6 +96,8 @@ export interface LibraryEntry {
   languages?: LangCode[];
   matchState?: 'pending' | 'matched' | 'unmatched';
   source: 'goodreads-csv' | 'goodreads-rss' | 'manual' | 'swipe';
+  /** IDs zusammengeführter Ausgaben desselben Buchs (siehe libraryMerge.ts). */
+  aliases?: string[];
 }
 
 export interface WishlistItem {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { idbStorage } from './idbStorage';
+import { mergeDuplicates } from '../lib/libraryMerge';
 import { bookFingerprint } from '../lib/text';
 import type { Book, LibraryEntry, Shelf } from '../lib/types';
 import { announceBulkChange } from './syncIntent';
@@ -15,7 +16,9 @@ interface LibraryState {
   entries: Record<string, LibraryEntry>;
   lastImport?: ImportInfo;
   /** Fügt Einträge hinzu bzw. aktualisiert bestehende (gleiche ID oder gleiches Buch). */
-  upsertMany: (entries: LibraryEntry[], source?: LibraryEntry['source']) => { added: number; updated: number };
+  upsertMany: (entries: LibraryEntry[], source?: LibraryEntry['source']) => { added: number; updated: number; merged: number };
+  /** Führt doppelte Ausgaben desselben Buchs zusammen; gibt zurück, wie viele Einträge dabei aufgehen. */
+  dedupe: () => number;
   update: (id: string, patch: Partial<LibraryEntry>) => void;
   updateMany: (patches: Array<{ id: string; patch: Partial<LibraryEntry> }>) => void;
   remove: (id: string) => void;
@@ -44,11 +47,16 @@ export const useLibrary = create<LibraryState>()(
       upsertMany: (incoming, source) => {
         const entries = { ...get().entries };
         const byPrint = new Map<string, string>();
-        for (const e of Object.values(entries)) byPrint.set(bookFingerprint(e.title, e.authors), e.id);
+        const byAlias = new Map<string, string>();
+        for (const e of Object.values(entries)) {
+          byPrint.set(bookFingerprint(e.title, e.authors), e.id);
+          for (const a of e.aliases ?? []) byAlias.set(a, e.id);
+        }
         let added = 0;
         let updated = 0;
         for (const entry of incoming) {
-          const existingId = entries[entry.id] ? entry.id : byPrint.get(bookFingerprint(entry.title, entry.authors));
+          // Schon zusammengeführte Ausgaben (z. B. beim erneuten Goodreads-Import) nicht wieder anlegen
+          const existingId = entries[entry.id] ? entry.id : (byAlias.get(entry.id) ?? byPrint.get(bookFingerprint(entry.title, entry.authors)));
           if (existingId && entries[existingId]) {
             entries[existingId] = mergeEntry(entries[existingId], entry);
             updated++;
@@ -58,11 +66,17 @@ export const useLibrary = create<LibraryState>()(
             added++;
           }
         }
+        const merged = mergeDuplicates(entries);
         set({
-          entries,
+          entries: merged.entries,
           lastImport: source ? { source, at: new Date().toISOString(), count: incoming.length } : get().lastImport,
         });
-        return { added, updated };
+        return { added, updated, merged: merged.removed.length };
+      },
+      dedupe: () => {
+        const merged = mergeDuplicates(get().entries);
+        if (merged.removed.length) set({ entries: merged.entries });
+        return merged.removed.length;
       },
       update: (id, patch) => {
         const e = get().entries[id];
@@ -72,7 +86,8 @@ export const useLibrary = create<LibraryState>()(
       updateMany: (patches) => {
         const entries = { ...get().entries };
         for (const { id, patch } of patches) if (entries[id]) entries[id] = { ...entries[id], ...patch };
-        set({ entries });
+        // Erst mit dem zugeordneten Werk zeigt sich, dass zwei Ausgaben dasselbe Buch sind
+        set({ entries: mergeDuplicates(entries).entries });
       },
       remove: (id) => {
         const entries = { ...get().entries };

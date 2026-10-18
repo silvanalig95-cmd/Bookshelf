@@ -263,6 +263,11 @@ function EntryList({ shelves }: { shelves: Shelf[] }) {
               <div className="row wrap" style={{ gap: 4, marginTop: 4 }}>
                 {e.matchState === 'unmatched' && <span className="tag gold" title="Kein Open-Library-Werk gefunden – zählt nur eingeschränkt für Empfehlungen">ohne Themen</span>}
                 {e.workKey && owned[e.workKey.replace('/works/', '')] && <span className="tag teal">{ownedLabel(owned[e.workKey.replace('/works/', '')].formats)}</span>}
+                {(e.aliases?.length ?? 0) > 0 && (
+                  <span className="tag" title="Mehrere Ausgaben desselben Buchs – zu einem Eintrag zusammengeführt">
+                    {(e.aliases?.length ?? 0) + 1} Ausgaben
+                  </span>
+                )}
                 {(e.tags ?? []).slice(0, 4).map((t) => (
                   <span key={t} className="tag">
                     {t}
@@ -505,10 +510,11 @@ function ImportPanel() {
     localApiStatus().then((s) => setServer(s.goodreads));
   }, []);
 
-  const afterImport = (count: number, source: string, added: number, updated: number) => {
+  const afterImport = (count: number, source: string, added: number, updated: number, merged = 0) => {
     toast(`${count} Bücher aus ${source} übernommen`);
     startEnrichment();
-    return `${count} Bücher gelesen – ${added} neu, ${updated} aktualisiert. Themen werden jetzt im Hintergrund ergänzt.`;
+    const dupes = merged ? ` ${merged} doppelte ${merged === 1 ? 'Ausgabe' : 'Ausgaben'} zusammengeführt.` : '';
+    return `${count} Bücher gelesen – ${added} neu, ${updated} aktualisiert.${dupes} Themen werden jetzt im Hintergrund ergänzt.`;
   };
 
   const importRss = async () => {
@@ -527,8 +533,8 @@ function ImportPanel() {
         return;
       }
       settings.set({ goodreadsUserId: id });
-      const { added, updated } = upsertMany(entries, 'goodreads-rss');
-      setRssState({ busy: false, message: afterImport(entries.length, 'Goodreads', added, updated) });
+      const { added, updated, merged } = upsertMany(entries, 'goodreads-rss');
+      setRssState({ busy: false, message: afterImport(entries.length, 'Goodreads', added, updated, merged) });
     } catch (err) {
       setRssState({
         busy: false,
@@ -546,8 +552,8 @@ function ImportPanel() {
         setCsvState({ error: result.errors[0] ?? 'Keine Bücher in der Datei gefunden.' });
         return;
       }
-      const { added, updated } = upsertMany(result.entries, 'goodreads-csv');
-      setCsvState({ message: afterImport(result.entries.length, 'dem CSV-Export', added, updated) });
+      const { added, updated, merged } = upsertMany(result.entries, 'goodreads-csv');
+      setCsvState({ message: afterImport(result.entries.length, 'dem CSV-Export', added, updated, merged) });
     } catch (err) {
       setCsvState({ error: err instanceof Error ? err.message : String(err) });
     }
