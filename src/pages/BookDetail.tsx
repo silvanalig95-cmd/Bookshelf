@@ -14,6 +14,7 @@ import { settle } from '../lib/http';
 import { docToBook, getBookByWorkId, getEditions, getWork, isbnCoverUrl, searchWorks, workForIsbn, type WorkDetails } from '../lib/openLibrary';
 import { scoreForProfile } from '../lib/recommend';
 import { displaySubjects, languageLabel, subjectLabel } from '../lib/taxonomy';
+import { annasArchiveLink } from '../lib/shops';
 import { solrPhrase, uniq } from '../lib/text';
 import type { Book, Edition } from '../lib/types';
 import { useSettings } from '../store/settings';
@@ -153,7 +154,9 @@ export default function BookDetail() {
     [selected?.isbn13, region],
   );
 
-  const germanTitle = selected?.languages.includes('ger') ? selected.title : book?.preferredEditionLang === 'ger' ? book.title : undefined;
+  // Titel einer deutschen Ausgabe – für Wikipedia und Anna's Archive, auch wenn gerade eine andere gewählt ist
+  const germanEdition = selected?.languages.includes('ger') ? selected : pickDefaultEdition(editions.filter((e) => e.languages.includes('ger') && e.title), 'de-first');
+  const germanTitle = germanEdition?.title || (book?.preferredEditionLang === 'ger' ? book.title : undefined);
   const wiki = useAsync(
     async (signal) => {
       if (!book) return undefined;
@@ -231,6 +234,7 @@ export default function BookDetail() {
   const displayTitle = selected?.languages.includes('ger') ? selected.title || book.title : book.title;
   const original = book.originalTitle && book.originalTitle !== displayTitle ? book.originalTitle : displayTitle !== book.title ? book.title : undefined;
   const topSubject = distinctiveSubjects(book.subjects, 1)[0];
+  const annas = annasArchiveLink({ annasBase: aiSettings.annasBase, title: book.title, author: book.authors[0], germanTitle });
 
   return (
     <div>
@@ -286,20 +290,28 @@ export default function BookDetail() {
               </span>
             </div>
           )}
-          <h1 className="detail-title">{displayTitle}</h1>
-          {(selected?.subtitle || book.subtitle) && <div className="detail-sub">{selected?.subtitle || book.subtitle}</div>}
-          <div className="detail-authors">
-            von{' '}
-            {book.authors.length
-              ? book.authors.slice(0, 4).map((a, i) => (
-                  <span key={a}>
-                    {i > 0 && ', '}
-                    <Link to={`/entdecken?autor=${encodeURIComponent(a)}`}>{a}</Link>
-                  </span>
-                ))
-              : 'Unbekannt'}
+          <div className="detail-head">
+            <div className="detail-head-main">
+              <h1 className="detail-title">{displayTitle}</h1>
+              {(selected?.subtitle || book.subtitle) && <div className="detail-sub">{selected?.subtitle || book.subtitle}</div>}
+              <div className="detail-authors">
+                von{' '}
+                {book.authors.length
+                  ? book.authors.slice(0, 4).map((a, i) => (
+                      <span key={a}>
+                        {i > 0 && ', '}
+                        <Link to={`/entdecken?autor=${encodeURIComponent(a)}`}>{a}</Link>
+                      </span>
+                    ))
+                  : 'Unbekannt'}
+              </div>
+              {original && <div className="muted small mt-1">Originaltitel: {original}</div>}
+            </div>
+            <a className="btn annas-btn" href={annas.url} target="_blank" rel="noopener noreferrer" title={`Bei Anna’s Archive suchen – ${annas.note}`}>
+              <span>Anna’s Archive ↗</span>
+              <span className="tiny muted">{annas.id === 'annas-de' ? 'nur deutsche Ausgaben' : 'alle Sprachen'}</span>
+            </a>
           </div>
-          {original && <div className="muted small mt-1">Originaltitel: {original}</div>}
 
           <div className="detail-facts">
             {book.rating ? (
@@ -446,6 +458,7 @@ export default function BookDetail() {
               workId={isOL ? id : undefined}
               ebookPrice={gb?.price}
               priceLoading={gbState.loading && Boolean(selected?.isbn13)}
+              germanTitle={germanTitle}
             />
           </section>
         </div>

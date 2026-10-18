@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { annasArchiveUrl, buildOffers, priceHint } from '../src/lib/shops';
+import { annasArchiveLink, annasArchiveUrl, buildOffers, priceHint } from '../src/lib/shops';
 
 describe('Angebote', () => {
   const base = { title: 'Der Schatten des Windes', author: 'Carlos Ruiz Zafón', annasBase: 'https://annas-archive.gl', language: 'ger' };
@@ -22,11 +22,30 @@ describe('Angebote', () => {
     expect(links.some((l) => l.id === 'swisscovery')).toBe(true);
   });
 
-  it('verlinkt Anna’s Archive per ISBN und per Titel', () => {
+  it('verlinkt Anna’s Archive gleich nach deutschen Ausgaben gefiltert, dazu ISBN-genau', () => {
     const archive = buildOffers({ ...base, isbn13: '9783518458006', region: 'DE' }).find((g) => g.kind === 'archive')!.links;
-    expect(archive[0].url).toBe('https://annas-archive.gl/search?q=9783518458006');
-    expect(archive[1].url).toContain('lang=de');
+    expect(archive.map((l) => l.id)).toEqual(['annas-de', 'annas-isbn', 'annas-all']);
+    expect(archive[0].url).toBe('https://annas-archive.gl/search?q=Der+Schatten+des+Windes+Carlos+Ruiz+Zaf%C3%B3n&lang=de');
+    expect(archive[1].url).toBe('https://annas-archive.gl/search?q=9783518458006&lang=de');
+    expect(archive[2].url).not.toContain('lang=');
     expect(annasArchiveUrl('https://annas-archive.li/', 'a b')).toBe('https://annas-archive.li/search?q=a+b');
+  });
+
+  it('sucht auf Anna’s Archive mit dem deutschen Titel, auch wenn eine fremdsprachige Ausgabe gewählt ist', () => {
+    const link = annasArchiveLink({ annasBase: 'https://annas-archive.gl', title: 'La sombra del viento', author: 'Carlos Ruiz Zafón', language: 'spa', germanTitle: 'Der Schatten des Windes' });
+    expect(link.id).toBe('annas-de');
+    expect(link.url).toContain('q=Der+Schatten+des+Windes');
+    expect(link.url).toContain('lang=de');
+    const isbn = buildOffers({ ...base, title: 'La sombra del viento', language: 'spa', germanTitle: 'Der Schatten des Windes', isbn13: '9788408163435', region: 'CH' })
+      .find((g) => g.kind === 'archive')!
+      .links.find((l) => l.id === 'annas-isbn')!;
+    expect(isbn.url).not.toContain('lang='); // eine spanische ISBN gibt es nicht auf Deutsch
+  });
+
+  it('sucht ohne bekannte deutsche Ausgabe in allen Sprachen', () => {
+    const link = annasArchiveLink({ annasBase: 'https://annas-archive.gl', title: 'Piranesi', author: 'Susanna Clarke', language: 'eng' });
+    expect(link.id).toBe('annas-any');
+    expect(link.url).not.toContain('lang=');
   });
 
   it('sucht ohne ISBN über Titel und Autor', () => {

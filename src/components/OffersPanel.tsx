@@ -12,6 +12,8 @@ interface Props {
   workId?: string;
   ebookPrice?: GBPrice;
   priceLoading?: boolean;
+  /** Deutscher Titel, falls es eine deutsche Ausgabe gibt – Anna's Archive sucht dann nur Deutsches. */
+  germanTitle?: string;
 }
 
 function formatMoney(amount: number, currency: string): string {
@@ -22,7 +24,7 @@ function formatMoney(amount: number, currency: string): string {
   }
 }
 
-export function OffersPanel({ title, author, edition, workId, ebookPrice, priceLoading }: Props) {
+export function OffersPanel({ title, author, edition, workId, ebookPrice, priceLoading, germanTitle }: Props) {
   const { region, annasBase, preferredShop } = useSettings();
   const language = edition?.languages[0];
   const groups = useMemo(
@@ -36,8 +38,9 @@ export function OffersPanel({ title, author, edition, workId, ebookPrice, priceL
         annasBase,
         workId,
         preferredShop,
+        germanTitle,
       }),
-    [edition, title, author, region, language, annasBase, workId, preferredShop],
+    [edition, title, author, region, language, annasBase, workId, preferredShop, germanTitle],
   );
   const featured = groups.flatMap((g) => g.links).filter((l) => l.featured);
 

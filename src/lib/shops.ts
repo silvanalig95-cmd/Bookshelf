@@ -38,6 +38,8 @@ export interface OfferInput {
   workId?: string;
   /** Lieblingsshop (ID), wird zuerst und hervorgehoben angezeigt. */
   preferredShop?: string;
+  /** Titel einer deutschen Ausgabe, falls eine bekannt ist (auch wenn gerade eine andere gewählt ist). */
+  germanTitle?: string;
 }
 
 export const ANNAS_ARCHIVE_MIRRORS = ['https://annas-archive.gl', 'https://annas-archive.li', 'https://annas-archive.gs', 'https://annas-archive.org'];
@@ -49,6 +51,30 @@ export function annasArchiveUrl(base: string, query: string, lang?: string): str
   const params = new URLSearchParams({ q: query });
   if (lang) params.set('lang', lang);
   return `${root}/search?${params.toString()}`;
+}
+
+/**
+ * Der direkte Weg zu Anna's Archive: gleich nach deutschen Ausgaben gefiltert, sobald eine
+ * deutsche Ausgabe bekannt ist – gesucht wird dann mit ihrem deutschen Titel. Sonst alle Sprachen.
+ */
+export function annasArchiveLink(input: Pick<OfferInput, 'annasBase' | 'title' | 'author' | 'language' | 'germanTitle'>): OfferLink {
+  const german = input.language === 'ger' ? input.title : input.germanTitle;
+  if (german) {
+    return {
+      id: 'annas-de',
+      name: "Anna's Archive",
+      url: annasArchiveUrl(input.annasBase, [german, input.author].filter(Boolean).join(' '), 'de'),
+      kind: 'archive',
+      note: 'nur deutsche Ausgaben',
+    };
+  }
+  return {
+    id: 'annas-any',
+    name: "Anna's Archive",
+    url: annasArchiveUrl(input.annasBase, [input.title, input.author].filter(Boolean).join(' ')),
+    kind: 'archive',
+    note: 'keine deutsche Ausgabe bekannt – alle Sprachen',
+  };
 }
 
 export function buildOffers(input: OfferInput): OfferGroup[] {
@@ -146,17 +172,14 @@ export function buildOffers(input: OfferInput): OfferGroup[] {
   }
   library.push({ id: 'onleihe', name: 'Onleihe', url: 'https://www.onleihe.net/', kind: 'library', note: 'E-Books leihen mit Bibliotheksausweis' });
 
-  const archive: OfferLink[] = [];
+  const annas = annasArchiveLink(input);
+  const archive: OfferLink[] = [annas];
   if (isbn13) {
-    archive.push({ id: 'annas-isbn', name: "Anna's Archive (ISBN)", url: annasArchiveUrl(input.annasBase, isbn13), kind: 'archive', note: 'genau diese Ausgabe' });
+    archive.push({ id: 'annas-isbn', name: "Anna's Archive (ISBN)", url: annasArchiveUrl(input.annasBase, isbn13, isGerman ? 'de' : undefined), kind: 'archive', note: 'genau diese Ausgabe' });
   }
-  archive.push({
-    id: 'annas-title',
-    name: "Anna's Archive (Titel)",
-    url: annasArchiveUrl(input.annasBase, textQuery, isGerman ? 'de' : undefined),
-    kind: 'archive',
-    note: isGerman ? 'alle deutschen Treffer' : 'alle Treffer',
-  });
+  if (annas.id === 'annas-de') {
+    archive.push({ id: 'annas-all', name: "Anna's Archive (alle Sprachen)", url: annasArchiveUrl(input.annasBase, textQuery), kind: 'archive', note: 'falls deutsch nichts kommt' });
+  }
 
   const info: OfferLink[] = [
     { id: 'goodreads', name: 'Goodreads', url: `https://www.goodreads.com/search?q=${enc(q)}`, kind: 'info' },
