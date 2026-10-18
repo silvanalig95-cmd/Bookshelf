@@ -22,12 +22,13 @@ import { announceBulkChange } from '../store/syncIntent';
 import { toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
 
-type Tab = 'gelesen' | 'wunsch' | 'merkliste' | 'dna' | 'import';
+type Tab = 'gelesen' | 'wunsch' | 'merkliste' | 'ausgeblendet' | 'dna' | 'import';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'gelesen', label: 'Gelesen' },
   { id: 'wunsch', label: 'Will ich lesen' },
   { id: 'merkliste', label: 'Merkliste' },
+  { id: 'ausgeblendet', label: 'Ausgeblendet' },
   { id: 'dna', label: 'Lese-DNA' },
   { id: 'import', label: '⇅ Goodreads & Daten' },
 ];
@@ -37,12 +38,14 @@ export default function Library() {
   const tab = (params.get('tab') as Tab) || 'gelesen';
   const entries = useLibraryEntries();
   const wishCount = useWishlist((s) => Object.keys(s.items).length);
+  const hiddenCount = useSignals((s) => s.signals.filter((x) => x.verdict === 'hide').length);
   const enrichment = useEnrichment();
   const pending = entries.filter((e) => e.matchState !== 'matched').length;
   const counts: Record<Tab, number | undefined> = {
     gelesen: entries.filter((e) => e.shelf !== 'to-read').length,
     wunsch: entries.filter((e) => e.shelf === 'to-read').length,
     merkliste: wishCount,
+    ausgeblendet: hiddenCount,
     dna: undefined,
     import: undefined,
   };
@@ -80,7 +83,7 @@ export default function Library() {
       )}
 
       <div className="tabs" role="tablist">
-        {TABS.map((t) => (
+        {TABS.filter((t) => t.id !== 'ausgeblendet' || hiddenCount > 0 || tab === t.id).map((t) => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setParams({ tab: t.id }, { replace: true })}>
             {t.label}
             {counts[t.id] ? <span className="muted"> {counts[t.id]}</span> : null}
@@ -91,8 +94,63 @@ export default function Library() {
       {tab === 'gelesen' && <EntryList shelves={['read', 'currently-reading']} />}
       {tab === 'wunsch' && <EntryList shelves={['to-read']} />}
       {tab === 'merkliste' && <Wishlist />}
+      {tab === 'ausgeblendet' && <HiddenList />}
       {tab === 'dna' && <ReadingDna />}
       {tab === 'import' && <ImportPanel />}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+/** Ausgeblendete Bücher – erscheinen nirgends mehr in den Vorschlägen, lassen sich aber wieder hervorholen. */
+function HiddenList() {
+  const signals = useSignals((s) => s.signals);
+  const restore = useSignals((s) => s.restore);
+  const hidden = useMemo(() => signals.filter((s) => s.verdict === 'hide').sort((a, b) => b.at.localeCompare(a.at)), [signals]);
+  if (!hidden.length) {
+    return (
+      <Empty title="Nichts ausgeblendet">
+        <p>Mit ✕ auf einer Buchkarte blendest du ein Buch aus den Vorschlägen aus – etwa wenn es für dich erledigt ist.</p>
+      </Empty>
+    );
+  }
+  return (
+    <div>
+      <div className="row wrap" style={{ marginBottom: 12 }}>
+        <span className="muted small">
+          {hidden.length} {hidden.length === 1 ? 'Buch erscheint' : 'Bücher erscheinen'} nicht mehr in den Vorschlägen. Ausblenden zählt nur ganz leise gegen ähnliche Bücher – erst
+          viele davon verschieben deinen Geschmack.
+        </span>
+        <span className="spacer" />
+        <button
+          className="btn btn-sm btn-ghost"
+          onClick={() => {
+            if (!confirm(`Alle ${hidden.length} ausgeblendeten Bücher wieder vorschlagen?`)) return;
+            announceBulkChange();
+            for (const s of hidden) restore(s.bookId);
+          }}
+        >
+          Alle wieder zeigen
+        </button>
+      </div>
+      <div className="stack" style={{ gap: 8 }}>
+        {hidden.map((s) => (
+          <div key={s.bookId} className="edition" style={{ cursor: 'default', gridTemplateColumns: '1fr auto' }}>
+            <div style={{ minWidth: 0 }}>
+              <Link to={`/buch/${encodeURIComponent(s.bookId)}`} className="e-title" style={{ color: 'var(--ink)' }}>
+                {s.title}
+              </Link>
+              <div className="small muted">
+                {s.authors[0] ?? ''} · ausgeblendet am {new Date(s.at).toLocaleDateString('de-CH')}
+              </div>
+            </div>
+            <button className="btn btn-sm" onClick={() => restore(s.bookId)}>
+              Wieder zeigen
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -241,7 +299,7 @@ function Wishlist() {
           Leeren
         </button>
       </div>
-      <BookGrid items={list.map((w) => w.book)} origin="Merkliste" />
+      <BookGrid items={list.map((w) => w.book)} origin="Merkliste" keepHidden />
     </div>
   );
 }

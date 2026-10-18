@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
+import type { AiConfig } from './aiPrompts';
+import { aiAvailability, aiConfigFor, type AiAccess } from './aiStatus';
+import { useSettings } from '../store/settings';
 import { buildReadIndex, useLibrary } from '../store/library';
 import { useNightShift } from '../store/nightShift';
 import { useSignals } from '../store/signals';
@@ -69,4 +72,19 @@ export function errorMessage(err: unknown): string {
     return err.message;
   }
   return String(err);
+}
+
+/** Welche KI gerade nutzbar ist (Schlüssel im Browser oder auf dem Server) – undefined, wenn keine. */
+export function useAiConfig(): AiConfig | undefined {
+  const settings = useSettings();
+  const [ai, setAi] = useState<AiAccess>({ available: false });
+  useEffect(() => {
+    let alive = true;
+    aiAvailability(settings).then((a) => alive && setAi(a));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.aiProvider, settings.aiApiKey, settings.geminiApiKey, settings.fallbackChannels, settings.mistralApiKey, settings.groqApiKey, settings.openrouterApiKey]);
+  return useMemo(() => aiConfigFor(ai, settings), [ai, settings]);
 }

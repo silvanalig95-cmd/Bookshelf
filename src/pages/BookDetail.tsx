@@ -18,12 +18,14 @@ import { annasArchiveLink } from '../lib/shops';
 import { solrPhrase, uniq } from '../lib/text';
 import type { Book, Edition } from '../lib/types';
 import { useSettings } from '../store/settings';
-import { fetchSharedBlurb, readBlurb, shareBlurb, writeBlurb } from '../lib/blurbCache';
+import { richGermanText, wikiMaterial } from '../lib/bookTexts';
 import { contentSummary, deeplUrl, germanWikipediaSummary, guessLanguage } from '../lib/wikipedia';
 import type { AiConfig } from '../lib/aiPrompts';
 import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
 import { useImpressions } from '../store/impressions';
-import { useSignals } from '../store/signals';
+import { autoBlurb, generateBlurb, lookupBlurb, useBlurbs } from '../store/blurbs';
+import { useNightShift } from '../store/nightShift';
+import { hideBook, useSignals } from '../store/signals';
 import { recallBook, rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
 
@@ -85,6 +87,8 @@ export default function BookDetail() {
   const readIndex = useReadIndex();
   const profile = useProfile();
   const record = useSignals((s) => s.record);
+  const restoreSignal = useSignals((s) => s.restore);
+  const hidden = useSignals((s) => s.signals.some((x) => x.bookId === id && x.verdict === 'hide'));
   const saved = useWishlist((s) => Boolean(s.items[id]));
   const toggleWish = useWishlist((s) => s.toggle);
   const openRating = useUi((s) => s.openRating);
@@ -97,6 +101,13 @@ export default function BookDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiSettings.aiProvider, aiSettings.aiApiKey, aiSettings.geminiApiKey]);
   const aiConfig = aiConfigFor(ai, aiSettings);
+  // Spätestens nach vier Sekunden mit dem Material beginnen, das schon da ist
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    setWaited(false);
+    const t = setTimeout(() => setWaited(true), 4000);
+    return () => clearTimeout(t);
+  }, [id]);
 
   const main = useAsync((signal) => loadBook(id, signal, googleApiKey, region), [id]);
   useEffect(() => {
@@ -226,6 +237,9 @@ export default function BookDetail() {
   // Zählt nur, was vom Inhalt erzählt – eine Einleitung über Verlag und Erfolg reicht nicht
   const wikiContent = wiki.data ? contentSummary(wiki.data) : undefined;
   const germanText = Boolean(wikiContent || germanBlurb);
+  // KI nur, wenn es keinen gehaltvollen deutschen Text gibt (Wikipedia, deutscher Klappentext)
+  const rich = richGermanText({ wiki: wiki.data, description: anyDescription, gbGerman });
+  const materialReady = waited || (!wiki.loading && !gbState.loading && !editionsState.loading);
   const foreignDescription = germanBlurb ? undefined : anyDescription;
   const libraryEntry = readIndex.entryFor(book);
   const subjects = displaySubjects(book.subjects, 8);
@@ -277,6 +291,20 @@ export default function BookDetail() {
             <Link className="btn btn-block btn-ghost" to={`/bibliothekar?buch=${encodeURIComponent(`${book.title} von ${book.authors[0] ?? ''}`)}`}>
               KI fragen
             </Link>
+            <button
+              className="btn btn-block btn-ghost"
+              title={hidden ? 'Erscheint wieder in den Vorschlägen' : 'Nicht mehr vorschlagen – zählt nur leise gegen ähnliche Bücher'}
+              onClick={() => {
+                if (hidden) {
+                  restoreSignal(book.id);
+                  toast('Wird wieder vorgeschlagen');
+                } else {
+                  toast('Ausgeblendet – erscheint nicht mehr in den Vorschlägen', { label: 'Rückgängig', run: hideBook(book) });
+                }
+              }}
+            >
+              {hidden ? 'Wieder vorschlagen' : 'Ausblenden'}
+            </button>
           </div>
         </aside>
 
@@ -351,7 +379,7 @@ export default function BookDetail() {
           </div>
 
           {/* Worum geht's – Inhalt vor Verlagsgeschichte, Deutsches vor Fremdsprachigem */}
-          {!germanText && <AiBlurb book={book} description={description} config={aiConfig} prominent />}
+          {!rich && <AiBlurb book={book} description={description} wiki={wikiMaterial(wiki.data)} config={aiConfig} prominent auto ready={materialReady} />}
           {!germanText && foreignDescription && <ForeignBlurb text={foreignDescription} lang={descriptionLang} open={!aiConfig} />}
           {wiki.data && (
             <div className="about-block">
@@ -383,7 +411,7 @@ export default function BookDetail() {
               <div className="tiny muted">Klappentext: {gbGerman ? 'Google Books' : 'Open Library'}</div>
             </div>
           )}
-          {germanText && <AiBlurb book={book} description={description} config={aiConfig} />}
+          {rich && <AiBlurb book={book} description={description} wiki={wikiMaterial(wiki.data)} config={aiConfig} />}
           {germanText && foreignDescription && <ForeignBlurb text={foreignDescription} lang={descriptionLang} />}
           {!germanText && !foreignDescription && !wiki.data && !wiki.loading && <p className="muted">Für dieses Buch ist noch keine Beschreibung hinterlegt.</p>}
           {book.firstSentence && germanish(book.firstSentence) && (
@@ -484,77 +512,77 @@ function ForeignBlurb({ text, lang, open = false }: { text: string; lang?: strin
   );
 }
 
-/** Kurze, spoilerfreie deutsche Beschreibung von der KI – auf Wunsch erzeugt, gemerkt und mit den anderen Geräten geteilt. */
-function AiBlurb({ book, description, config, prominent }: { book: Book; description?: string; config?: AiConfig; prominent?: boolean }) {
+/**
+ * Kurze, spoilerfreie deutsche Beschreibung von der KI – gemerkt und mit den anderen Geräten geteilt.
+ * Mit `auto` entsteht sie von selbst, sobald das Material (Wikipedia, Klappentext) geladen ist.
+ */
+function AiBlurb({
+  book,
+  description,
+  wiki,
+  config,
+  prominent,
+  auto,
+  ready,
+}: {
+  book: Book;
+  description?: string;
+  wiki?: string;
+  config?: AiConfig;
+  prominent?: boolean;
+  auto?: boolean;
+  ready?: boolean;
+}) {
   const entries = useLibraryEntries();
   const profile = useProfile();
-  const [state, setState] = useState<{ text?: string; model?: string; note?: string; busy?: boolean; error?: string }>({});
+  const view = useBlurbs((s) => s.items[book.id]);
+  const nightShift = useNightShift((s) => s.available);
+  const job = config ? { config, entries, profile, description, wiki } : undefined;
   useEffect(() => {
-    const local = readBlurb(book.id);
-    setState(local ?? {});
-    if (local) return;
-    // Vielleicht hat ein anderes Gerät sie schon erzeugt
-    const controller = new AbortController();
-    fetchSharedBlurb(book.id, controller.signal).then((shared) => shared && setState((s) => (s.text || s.busy ? s : shared)));
-    return () => controller.abort();
+    void lookupBlurb(book.id);
   }, [book.id]);
+  const start = Boolean(job && auto && ready);
+  useEffect(() => {
+    if (start && job) void autoBlurb(book, job);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book.id, start]);
 
-  if (!state.text && !state.busy && !config) return null;
-
-  const run = async () => {
-    if (!config) return;
-    const { aiErrorMessage, aiText, BLURB_SYSTEM, blurbPrompt, compactReadingContext, AI_MODEL_NAMES } = await import('../lib/ai');
-    let acc = '';
-    setState({ busy: true, text: '' });
-    try {
-      const reply = await aiText(
-        config,
-        // Knapper Lesekontext und ein günstiges Modell: eine Kurzbeschreibung braucht nicht die ganze Bibliothek
-        [BLURB_SYSTEM, `Lesekontext der Person:\n${compactReadingContext(entries, profile)}`],
-        blurbPrompt({ title: book.title, author: book.authors[0] ?? 'unbekannt', year: book.year, originalTitle: book.originalTitle, description, subjects: book.subjects }),
-        (delta) => {
-          acc += delta;
-          setState({ busy: true, text: acc });
-        },
-        { light: true },
-      );
-      const done = { text: reply.text.trim(), model: AI_MODEL_NAMES[reply.model] ?? reply.model, note: reply.note };
-      setState(done);
-      writeBlurb(book.id, { text: done.text, model: done.model });
-      shareBlurb(book.id, { text: done.text, model: done.model });
-    } catch (err) {
-      setState({ error: aiErrorMessage(err) });
-    }
-  };
-
-  if (state.text || state.busy) {
+  if (view?.text || view?.busy || (prominent && view?.pending)) {
     return (
       <div className="about-block ai-blurb">
         <div className="label">Kurz gesagt</div>
-        {(state.text || '…')
-          .split(/\n\s*\n/)
-          .filter(Boolean)
-          .map((p, i) => (
-            <p key={i} className="description mb-0">
-              {p.trim()}
-            </p>
-          ))}
-        {!state.busy && (
+        {view.text ? (
+          view.text
+            .split(/\n\s*\n/)
+            .filter(Boolean)
+            .map((p, i) => (
+              <p key={i} className="description mb-0">
+                {p.trim()}
+              </p>
+            ))
+        ) : (
+          <p className="muted small mb-0">
+            <span className="spinner" /> Deutsche Kurzbeschreibung wird geschrieben …
+          </p>
+        )}
+        {view.text && !view.busy && (
           <div className="tiny muted">
-            KI-Zusammenfassung{state.model ? ` · ${state.model}` : ''} – kann Fehler enthalten.{state.note ? ` ${state.note}` : ''}
+            KI-Zusammenfassung{view.model ? ` · ${view.model}` : ''} – kann Fehler enthalten.{view.note ? ` ${view.note}` : ''}
           </div>
         )}
       </div>
     );
   }
+  if (!job) return null;
   return (
     <div className="about-block">
-      <button className={`btn btn-sm ${prominent ? 'btn-soft' : 'btn-ghost'}`} onClick={run}>
-        Kurz & spoilerfrei auf Deutsch
+      <button className={`btn btn-sm ${prominent ? 'btn-soft' : 'btn-ghost'}`} onClick={() => void generateBlurb(book, job)}>
+        {view?.error ? 'Nochmals versuchen' : 'Kurz & spoilerfrei auf Deutsch'}
       </button>
-      {state.error && (
-        <p className="small mb-0" style={{ color: 'var(--rose)' }}>
-          {state.error}
+      {view?.error && (
+        <p className="small muted mb-0">
+          Gerade keine KI-Kurzbeschreibung möglich: {view.error}
+          {nightShift ? ' Die Nachtschicht holt sie heute Nacht nach.' : ''}
         </p>
       )}
     </div>

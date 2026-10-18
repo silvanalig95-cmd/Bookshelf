@@ -4,7 +4,7 @@
  * neue Karten, ohne sich auf wenige Genres festzufahren.
  *
  * Verfahren:
- *  - Jede Entscheidung zählt: „spannend“/„merken“ positiv, „nicht meins“ negativ. Ältere
+ *  - Jede Entscheidung zählt: „mehr davon“/„merken“ positiv, „nicht meins“ negativ, „ausgeblendet“ leicht negativ. Ältere
  *    zählen etwas weniger, aber nie unter 40 % – vergessen wird nichts.
  *  - Genres: pro Genre eine Beta-Verteilung aus Zuspruch und Ablehnung. Der Genre-Mix eines
  *    Stapels wird per Thompson-Sampling gezogen: gut belegte Lieblingsgenres kommen oft,
@@ -27,8 +27,9 @@ export const SWIPE_GENRES: Genre[] = GENRES.filter(
   (g) => (g.group === 'fiction' && !['kinder', 'lyrik', 'kurzgeschichten'].includes(g.id)) || NONFICTION_IN_DECK.includes(g.id),
 );
 
-const POSITIVE: Record<SignalVerdict, number> = { like: 1, save: 1.4, read: 0.7, dislike: 0 };
-const NEGATIVE: Record<SignalVerdict, number> = { like: 0, save: 0, read: 0, dislike: 1 };
+const POSITIVE: Record<SignalVerdict, number> = { like: 1, save: 1.4, read: 0.7, dislike: 0, hide: 0 };
+// Ausblenden heisst oft nur „erledigt“ oder „nicht jetzt“ – darum nur ein Hauch von „Nicht meins“
+const NEGATIVE: Record<SignalVerdict, number> = { like: 0, save: 0, read: 0, dislike: 1, hide: 0.15 };
 const DAY = 24 * 3600 * 1000;
 /** Glättung der Log-Odds: so viele „Schein-Beobachtungen“ zur allgemeinen Quote. */
 const SMOOTHING = 3;
@@ -148,7 +149,7 @@ export function buildSwipeModel(signals: TasteSignal[], now = Date.now()): Swipe
     posSum += pos;
     negSum += neg;
     if (pos) likes++;
-    else dislikes++;
+    else if (s.verdict === 'dislike') dislikes++;
     if (s.year) {
       eras[eraOf(s.year)].pos += pos;
       eras[eraOf(s.year)].neg += neg;

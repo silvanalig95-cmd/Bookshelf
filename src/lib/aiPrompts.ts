@@ -204,7 +204,7 @@ export function compactReadingContext(entries: LibraryEntry[], profile?: TastePr
 
 export const BLURB_SYSTEM = `${BASE_SYSTEM}
 
-Du schreibst kurze deutsche Buchbeschreibungen für die Buchseite der App: klar, konkret, ohne Werbesprache.`;
+Du schreibst deutsche Kurzbeschreibungen für die Buchseite und den Bücher-Stapel der App: konkret und gehaltvoll, ohne Werbesprache.`;
 
 export interface BlurbInput {
   title: string;
@@ -212,22 +212,39 @@ export interface BlurbInput {
   year?: number;
   originalTitle?: string;
   description?: string;
+  /** Inhalt aus der deutschsprachigen Wikipedia (Handlung oder Einleitung). */
+  wiki?: string;
   subjects: string[];
 }
+
+/**
+ * Der Auftrag – gleich lautend in server/nightShift.ts (die Nachtschicht schreibt dieselben
+ * Beschreibungen auf Vorrat; ein Test prüft, dass beide übereinstimmen).
+ */
+export const BLURB_INSTRUCTIONS = [
+  'Schreib auf Deutsch zwei Absätze:',
+  '1. Worum es geht – 4 bis 6 Sätze, spoilerfrei: Ausgangslage und Hauptfiguren, Schauplatz und Zeit, worum es im Kern geht, Ton und Stil – und was das Buch besonders macht. Konkret statt allgemein; keine Wendungen, kein Ende.',
+  '2. Ein Satz, der mit „Passt zu dir, weil …“ oder „Eher nicht dein Fall, weil …“ beginnt und sich auf den Lesekontext stützt. Ohne Lesekontext: „Für alle, die …“.',
+  'Kennst du das Buch nicht sicher, stütze dich nur auf das Material oben und sag ehrlich, wenn es dünn ist. Keine Überschriften, keine Aufzählung, kein [[…]]-Format. Schweizer Rechtschreibung (ss statt ß).',
+];
 
 export function blurbPrompt(b: BlurbInput): string {
   return [
     `Buch: „${b.title}“ von ${b.author}${b.year ? ` (${b.year})` : ''}${b.originalTitle && b.originalTitle !== b.title ? `, Originaltitel „${b.originalTitle}“` : ''}.`,
+    b.wiki ? `Aus der deutschsprachigen Wikipedia:\n${b.wiki.slice(0, 2500)}` : '',
     b.description ? `Klappentext (evtl. in einer anderen Sprache):\n${b.description.slice(0, 2000)}` : '',
     b.subjects.length ? `Schlagwörter: ${b.subjects.slice(0, 15).join(', ')}` : '',
     '',
-    'Schreib auf Deutsch, zwei kurze Absätze:',
-    '1. Worum es geht – 3 bis 5 Sätze, spoilerfrei: Ausgangslage, Thema, Ton und Stil. Keine Wendungen, kein Ende.',
-    '2. Ein Satz, der mit „Passt zu dir, weil …“ oder „Eher nicht dein Fall, weil …“ beginnt und sich auf den Lesekontext stützt. Ohne Lesekontext: „Für alle, die …“.',
-    'Kennst du das Buch nicht sicher, stütze dich nur auf das Material oben und sag ehrlich, wenn es dünn ist. Keine Überschriften, keine Aufzählung, kein [[…]]-Format.',
+    ...BLURB_INSTRUCTIONS,
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+/** Der Satz „Passt zu dir, weil …“ aus einer Kurzbeschreibung (für die Anzeige neben anderen Texten). */
+export function fitSentence(blurb: string): string | undefined {
+  const parts = blurb.split(/\n\s*\n/).map((p) => p.trim());
+  return parts.find((p) => /^(Passt zu dir|Eher nicht dein Fall|Für alle, die)/.test(p));
 }
 
 /* ------------------------------------------------------------------ */

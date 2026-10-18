@@ -6,10 +6,10 @@ import { useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { isProfileUsable, topGenres } from '../lib/profile';
 import { buildRecommendations, uniqueAcrossSections, type RecSection } from '../lib/recommend';
 import type { Book, ScoredBook } from '../lib/types';
-import { fatigue, impressionsReady } from '../store/impressions';
+import { impressionsReady, staleness } from '../store/impressions';
 import { useNightShift } from '../store/nightShift';
 import { useSettings } from '../store/settings';
-import { useSignals } from '../store/signals';
+import { dismissedIds, useSignals } from '../store/signals';
 
 export default function ForYou() {
   const entries = useLibraryEntries();
@@ -25,7 +25,7 @@ export default function ForYou() {
   const suggestions = useNightShift((s) => s.results.suggestions);
   // Vorschläge der Nachtschicht: Neueste zuerst, ohne Gelesenes und Weggeklicktes
   const night = useMemo((): ScoredBook[] => {
-    const dismissed = new Set(signals.filter((s) => s.verdict === 'dislike').map((s) => s.bookId));
+    const dismissed = dismissedIds(signals);
     return [...suggestions]
       .reverse()
       .map((x): Book => ({ id: x.id, title: x.title, authors: x.authors, year: x.year, coverId: x.coverId, subjects: [], languages: [], source: 'openlibrary' }))
@@ -42,10 +42,12 @@ export default function ForYou() {
     let cancelled = false;
     setSections([]);
     setLoading(true);
-    const dismissed = new Set(signals.filter((s) => s.verdict === 'dislike').map((s) => s.bookId));
+    const dismissed = dismissedIds(signals);
     impressionsReady()
       .then(() =>
-        buildRecommendations(entries, { profile, readIndex, language, dismissed, fatigue: (id) => fatigue(id) }, (section) => {
+        // Wie auf der Startseite: Gesehenes macht sofort Platz und kommt erst nach ein, zwei Wochen wieder,
+        // was du immer wieder übergehst, nur noch selten
+        buildRecommendations(entries, { profile, readIndex, language, dismissed, fatigue: (id) => staleness(id) }, (section) => {
           if (!cancelled) setSections((prev) => [...prev.filter((p) => p.id !== section.id), section]);
         }),
       )

@@ -27,6 +27,8 @@ export interface SettingsState {
   geminiModel: GeminiModel;
   /** Ausweich-Kanäle nutzen, wenn der Hauptanbieter nicht antwortet. */
   fallbackChannels: boolean;
+  /** KI-Kurzbeschreibung von selbst schreiben (Buchseite, Stapel), wenn es keinen guten deutschen Text gibt. */
+  autoBlurb: boolean;
   /** Schlüssel der Ausweich-Kanäle (optional, bleiben auf dem Gerät). */
   mistralApiKey: string;
   groqApiKey: string;
@@ -55,6 +57,7 @@ export const useSettings = create<SettingsState>()(
       geminiApiKey: '',
       geminiModel: 'gemini-3.8-flash',
       fallbackChannels: true,
+      autoBlurb: true,
       mistralApiKey: '',
       groqApiKey: '',
       openrouterApiKey: '',

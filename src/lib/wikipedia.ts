@@ -114,7 +114,15 @@ interface RestSummary {
   thumbnail?: { source: string };
 }
 
+/** Nach „zu viele Anfragen“ (429) eine Minute Ruhe – sonst wird es nur schlimmer. */
+let blockedUntil = 0;
+
+function noteLimit(err: unknown) {
+  if (err instanceof HttpError && err.status === 429) blockedUntil = Date.now() + 60_000;
+}
+
 async function summary(title: string, signal?: AbortSignal): Promise<RestSummary | undefined> {
+  if (Date.now() < blockedUntil) return undefined;
   try {
     return await fetchJson<RestSummary>(`https://de.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`, {
       signal,
@@ -124,6 +132,7 @@ async function summary(title: string, signal?: AbortSignal): Promise<RestSummary
     });
   } catch (err) {
     if (err instanceof HttpError && err.status === 404) return undefined;
+    noteLimit(err);
     throw err;
   }
 }
@@ -156,20 +165,64 @@ export async function germanWikipediaSummary(
     }
   }
   const surname = opts.author ? authorSurname(opts.author) : '';
+  const fits = (w: WikiSummary) => {
+    const text = normalize(w.extract);
+    return (!surname || text.includes(surname)) && BOOKISH.test(text);
+  };
+  // Erst die naheliegenden Schreibweisen direkt, dann eine Volltextsuche – sparsam, Wikipedia drosselt
+  const variants = opts.titles.flatMap((t) => titleVariants(t).slice(0, 3));
   const tried = new Set<string>();
-  for (const t of opts.titles) {
-    for (const candidate of [t, `${t} (Roman)`]) {
-      if (!candidate.trim() || tried.has(candidate)) continue;
-      tried.add(candidate);
-      const s = await summary(candidate, signal).catch(() => undefined);
+  for (const candidate of [...variants, `${variants[variants.length > 1 ? 1 : 0] ?? ''} (Roman)`]) {
+    if (!candidate.trim() || candidate === ' (Roman)' || tried.has(candidate)) continue;
+    tried.add(candidate);
+    const s = await summary(candidate, signal).catch(() => undefined);
+    const w = s && toWiki(s);
+    if (w && fits(w)) return withPlot(w, signal);
+  }
+  // Volltextsuche: findet auch Artikel, deren Titel anders lautet als die Ausgabe
+  const first = variants[1] ?? variants[0];
+  if (!first || Date.now() < blockedUntil) return undefined;
+  try {
+    const d = await fetchJson<{ query?: { search?: Array<{ title: string }> } }>(
+      `https://de.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(`${first} ${opts.author ?? ''}`.trim())}&srlimit=3&format=json&origin=*`,
+      { signal, ttl: 24 * 60 * 60_000, retries: 0, headers: HEADERS },
+    );
+    for (const hit of (d.query?.search ?? []).slice(0, 2)) {
+      if (tried.has(hit.title)) continue;
+      const s = await summary(hit.title, signal).catch(() => undefined);
       const w = s && toWiki(s);
-      if (!w) continue;
-      const text = normalize(w.extract);
-      const authorOk = !surname || text.includes(surname);
-      if (authorOk && BOOKISH.test(text)) return withPlot(w, signal);
+      if (w && fits(w)) return withPlot(w, signal);
     }
+  } catch (err) {
+    noteLimit(err); // Suche nicht erreichbar
   }
   return undefined;
+}
+
+const SMALL_WORDS = /^(DER|DIE|DAS|DES|DEM|DEN|UND|ODER|VOM|VON|IM|AM|ZUM|ZUR|EIN|EINE|EINES|AUF|AUS|MIT|IN|AN)$/;
+
+/**
+ * Schreibweisen eines Ausgabentitels, unter denen der Wikipedia-Artikel stehen könnte: ohne
+ * Klammerzusätze („Ab 12 J.“) und Satzzeichen am Ende, mit normal geschriebenen Artikeln („DES“ → „des“),
+ * ohne Untertitel („Schlachthof 5 oder Der Kinderkreuzzug“ → „Schlachthof 5“).
+ */
+export function titleVariants(title: string): string[] {
+  const clean = title
+    .replace(/\s*\(.*?\)\s*/g, ' ')
+    .replace(/[\s.=:;,/–-]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return [];
+  const caps = clean
+    .split(' ')
+    .map((w, i) => (i > 0 && SMALL_WORDS.test(w) ? w.toLowerCase() : w))
+    .join(' ');
+  const out = [title.trim(), clean, caps];
+  const sub = caps.split(/\s*[:.]\s+|\s+[–-]\s+/)[0];
+  if (sub && sub !== caps) out.push(sub);
+  const oder = caps.match(/^(.+?)\s+oder\s+(\S)(.*)$/i);
+  if (oder) out.push(`${oder[1]} oder ${oder[2].toUpperCase()}${oder[3]}`, oder[1]);
+  return Array.from(new Set(out.filter(Boolean)));
 }
 
 /** Grobe Spracherkennung für kurze Beschreibungen. */

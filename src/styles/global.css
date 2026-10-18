@@ -1629,6 +1629,26 @@ details.disclosure > .description {
     bottom: 92px;
   }
 }
+.toast.with-action {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 8px;
+}
+.toast-action {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--bg) 18%, transparent);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.toast-action:hover {
+  background: color-mix(in srgb, var(--bg) 28%, transparent);
+}
 @keyframes toastIn {
   from {
     opacity: 0;
@@ -1993,6 +2013,17 @@ kbd {
   font-size: 0.95rem;
   line-height: 1.6;
 }
+.swipe-text p + p {
+  margin-top: 0.6em;
+}
+.swipe-text .swipe-fit {
+  color: var(--ink);
+  font-style: italic;
+}
+.swipe-text .tiny {
+  display: block;
+  margin-top: 6px;
+}
 .swipe-src {
   display: block;
   font-size: 0.72rem;
@@ -2115,10 +2146,10 @@ kbd {
     overflow: hidden;
   }
   .swipe-text:not(.open) {
-    display: -webkit-box;
-    -webkit-line-clamp: 8;
-    -webkit-box-orient: vertical;
+    max-height: calc(1.6em * 9 + 1.2em);
     overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 78%, transparent);
+    mask-image: linear-gradient(to bottom, #000 78%, transparent);
     cursor: pointer;
   }
   /* Knöpfe bleiben über der Navigationsleiste griffbereit */

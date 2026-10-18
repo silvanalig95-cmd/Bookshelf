@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { isbnCoverUrl } from '../lib/openLibrary';
 import type { Book, ScoredBook } from '../lib/types';
 import { useImpressions, watchImpression } from '../store/impressions';
-import { useSignals } from '../store/signals';
+import { hideBook, useDismissed, useSignals } from '../store/signals';
 import { rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
 import { Cover } from './Cover';
@@ -19,8 +19,11 @@ interface BookCardProps {
   maxReasons?: number;
   index?: number;
   origin?: string;
+  /** Zusätzlich zum Ausblenden (z. B. um das Buch aus einer Trefferliste zu nehmen). */
   onDismiss?: (book: Book) => void;
   showActions?: boolean;
+  /** Ausblenden anbieten (überall ausser z. B. auf der Merkliste). */
+  hideable?: boolean;
 }
 
 /** Hat das Werk bekannte Sprachen, aber keine deutsche Ausgabe? */
@@ -28,7 +31,7 @@ function notInGerman(book: Book): boolean {
   return book.languages.length > 0 && !book.languages.includes('ger') && book.preferredEditionLang !== 'ger';
 }
 
-export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, origin, onDismiss, showActions = true }: BookCardProps) {
+export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, origin, onDismiss, showActions = true, hideable = true }: BookCardProps) {
   const saved = useWishlist((s) => Boolean(s.items[book.id]));
   const toggle = useWishlist((s) => s.toggle);
   const record = useSignals((s) => s.record);
@@ -90,15 +93,16 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, o
             >
               ✓
             </button>
-            {onDismiss && (
+            {hideable && (
               <button
                 type="button"
                 className="mini-btn"
-                title="Nicht meins – weniger davon"
+                title="Ausblenden – nicht mehr vorschlagen"
+                aria-label={`„${book.title}“ ausblenden`}
                 onClick={() => {
-                  record(book, 'dislike');
-                  onDismiss(book);
-                  toast('Verstanden – weniger davon');
+                  const undo = hideBook(book);
+                  onDismiss?.(book);
+                  toast('Ausgeblendet', { label: 'Rückgängig', run: undo });
                 }}
               >
                 ✕
@@ -141,25 +145,37 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, o
   );
 });
 
+const bookOf = (item: Book | ScoredBook) => ('book' in item ? item.book : item);
+
+/** Ausgeblendetes und „Nicht meins“ verschwinden aus allen Vorschlägen – sofort, auch ohne neu zu laden. */
+function useVisible(items: Array<Book | ScoredBook>, keepHidden?: boolean) {
+  const dismissed = useDismissed();
+  return keepHidden ? items : items.filter((item) => !dismissed.has(bookOf(item).id));
+}
+
 export function BookGrid({
   items,
   compact,
   maxReasons,
   origin,
   onDismiss,
+  keepHidden,
 }: {
   items: Array<Book | ScoredBook>;
   compact?: boolean;
   maxReasons?: number;
   origin?: string;
   onDismiss?: (book: Book) => void;
+  /** Für eigene Listen wie die Merkliste: nichts ausblenden und kein Ausblenden anbieten. */
+  keepHidden?: boolean;
 }) {
+  const visible = useVisible(items, keepHidden);
   return (
     <div className={`book-grid ${compact ? 'compact' : ''}`}>
-      {items.map((item, i) => {
+      {visible.map((item, i) => {
         const scored = 'book' in item ? item : undefined;
-        const book = 'book' in item ? item.book : item;
-        return <BookCard key={book.id} book={book} scored={scored} index={i} maxReasons={maxReasons} origin={origin} onDismiss={onDismiss} />;
+        const book = bookOf(item);
+        return <BookCard key={book.id} book={book} scored={scored} index={i} maxReasons={maxReasons} origin={origin} onDismiss={onDismiss} hideable={!keepHidden} />;
       })}
     </div>
   );
@@ -171,13 +187,17 @@ export function BookRow({
   items,
   action,
   origin,
+  keepHidden,
 }: {
   title: string;
   subtitle?: string;
   items: Array<Book | ScoredBook>;
   action?: React.ReactNode;
   origin?: string;
+  keepHidden?: boolean;
 }) {
+  const visible = useVisible(items, keepHidden);
+  if (!visible.length) return null;
   return (
     <section className="shelf-row">
       <div className="shelf-row-head">
@@ -188,10 +208,10 @@ export function BookRow({
         {action}
       </div>
       <div className="scroller">
-        {items.map((item, i) => {
+        {visible.map((item, i) => {
           const scored = 'book' in item ? item : undefined;
-          const book = 'book' in item ? item.book : item;
-          return <BookCard key={book.id} book={book} scored={scored} index={i} maxReasons={2} origin={origin} />;
+          const book = bookOf(item);
+          return <BookCard key={book.id} book={book} scored={scored} index={i} maxReasons={2} origin={origin} hideable={!keepHidden} />;
         })}
       </div>
     </section>

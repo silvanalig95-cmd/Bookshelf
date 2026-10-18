@@ -3,11 +3,24 @@ import { useUi } from '../store/ui';
 
 export function Toasts() {
   const toasts = useUi((s) => s.toasts);
+  const dismiss = useUi((s) => s.dismissToast);
   return (
     <div className="toast-wrap" aria-live="polite">
       {toasts.map((t) => (
-        <div key={t.id} className="toast">
+        <div key={t.id} className={`toast ${t.action ? 'with-action' : ''}`}>
           {t.text}
+          {t.action && (
+            <button
+              type="button"
+              className="toast-action"
+              onClick={() => {
+                t.action?.run();
+                dismiss(t.id);
+              }}
+            >
+              {t.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>

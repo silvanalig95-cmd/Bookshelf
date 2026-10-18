@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contentSentences, contentSummary, extractPlot, premise, sentences } from '../src/lib/wikipedia';
+import { contentSentences, contentSummary, extractPlot, premise, sentences, titleVariants } from '../src/lib/wikipedia';
 
 const article = `
 Hunger (norwegisch Sult) ist der erste Roman von Knut Hamsun.
@@ -55,5 +55,16 @@ describe('Worum es geht', () => {
       text: 'Richard zieht nach Vermont.',
       source: 'plot',
     });
+  });
+});
+
+describe('Wikipedia: Schreibweisen von Ausgabentiteln', () => {
+  it('findet auch Titel mit Zusätzen, Grossbuchstaben und Untertiteln', () => {
+    expect(titleVariants('Schlachthof 5 oder der Kinderkreuzzug.')).toEqual(
+      expect.arrayContaining(['Schlachthof 5 oder der Kinderkreuzzug', 'Schlachthof 5 oder Der Kinderkreuzzug', 'Schlachthof 5']),
+    );
+    expect(titleVariants('Die Frau DES Zeitreisenden')).toContain('Die Frau des Zeitreisenden');
+    expect(titleVariants('Hüter der Erinnerung. ( Ab 12 J.).')).toContain('Hüter der Erinnerung');
+    expect(titleVariants('Der Fremde')).toEqual(['Der Fremde']);
   });
 });

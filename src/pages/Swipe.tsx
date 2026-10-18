@@ -5,17 +5,18 @@ import { Cover } from '../components/Cover';
 import { Icon } from '../components/Icon';
 import { Stars } from '../components/Stars';
 import { hasGerman } from '../lib/discovery';
-import { useAsync, useProfile, useReadIndex } from '../lib/hooks';
-import { settle } from '../lib/http';
-import { coverUrl, getWork, isbnCoverUrl } from '../lib/openLibrary';
+import { useAiConfig, useAsync, useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
+import { coverUrl, isbnCoverUrl } from '../lib/openLibrary';
 import { isProfileUsable } from '../lib/profile';
 import { drawDeck, type DeckCard } from '../lib/swipeDeck';
 import { buildSwipeModel, MODERN_FROM, summarizeModel } from '../lib/swipeModel';
 import { displaySubjects, languageLabel } from '../lib/taxonomy';
 import { shuffle, truncate } from '../lib/text';
 import type { Book, SignalVerdict, TasteSignal } from '../lib/types';
-import { readBlurb } from '../lib/blurbCache';
-import { contentSummary, germanWikipediaSummary, guessLanguage, type WikiSummary } from '../lib/wikipedia';
+import { fitSentence } from '../lib/aiPrompts';
+import { loadBookTexts, richGermanText, wikiMaterial, type BookTexts } from '../lib/bookTexts';
+import { contentSummary, guessLanguage } from '../lib/wikipedia';
+import { autoBlurb, autoBlurbPaused, prepareBlurb, useBlurbs, type BlurbView } from '../store/blurbs';
 import { useSettings } from '../store/settings';
 import { useSignals } from '../store/signals';
 import { rememberBook, toast, useUi } from '../store/ui';
@@ -39,13 +40,15 @@ interface LastDecision {
 const ACTIONS: Array<{ verdict: SignalVerdict; label: string; key: string; title: string }> = [
   { verdict: 'dislike', label: 'Nicht meins', key: '←', title: 'Nicht meins – weniger davon' },
   { verdict: 'read', label: 'Gelesen', key: '↓', title: 'Schon gelesen – bewerten' },
-  { verdict: 'save', label: 'Merken', key: '↑', title: 'Merken – dieses Buch will ich lesen' },
-  { verdict: 'like', label: 'Spannend', key: '→', title: 'Klingt spannend – mehr in diese Richtung' },
+  { verdict: 'save', label: 'Merken', key: '↑', title: 'Merken – dieses Buch will ich lesen: kommt auf die Merkliste und zählt auch als „mehr davon“' },
+  { verdict: 'like', label: 'Mehr davon', key: '→', title: 'Mehr davon – die Richtung stimmt, das Buch selbst muss es nicht sein' },
 ];
 
 
 export default function Swipe() {
   const language = useSettings((s) => s.language);
+  const googleApiKey = useSettings((s) => s.googleApiKey);
+  const region = useSettings((s) => s.region);
   const record = useSignals((s) => s.record);
   const signals = useSignals((s) => s.signals);
   const addWish = useWishlist((s) => s.add);
@@ -104,6 +107,39 @@ export default function Swipe() {
     const url = next?.coverUrl ?? coverUrl(next?.coverId, 'L');
     if (url) new Image().src = url;
   }, [next?.id]);
+
+  // Beschreibungen für die oberste und die zwei nächsten Karten vorbereiten: deutsche Texte suchen und –
+  // nur wo keiner taugt – die KI eine deutsche Kurzbeschreibung schreiben lassen (eine nach der anderen)
+  const aiConfig = useAiConfig();
+  const autoOn = useSettings((s) => s.autoBlurb);
+  const entries = useLibraryEntries();
+  const upcoming = useRef(new Set<string>());
+  upcoming.current = new Set(deck.slice(0, 3).map((c) => c.book.id));
+  const jobBase = useRef({ aiConfig, entries, profile, googleApiKey, region });
+  jobBase.current = { aiConfig, entries, profile, googleApiKey, region };
+  const top3 = deck
+    .slice(0, 3)
+    .map((c) => c.book.id)
+    .join('|');
+  useEffect(() => {
+    for (const card of deck.slice(0, 3)) {
+      const book = card.book;
+      prepareBlurb(async () => {
+        if (!upcoming.current.has(book.id)) return; // schon weitergeblättert
+        const base = jobBase.current;
+        const texts = await loadBookTexts(book, { googleApiKey: base.googleApiKey, country: base.region });
+        const needsAi = !richGermanText(texts);
+        await autoBlurb(
+          book,
+          needsAi && base.aiConfig && upcoming.current.has(book.id)
+            ? { config: base.aiConfig, entries: base.entries, profile: base.profile, description: texts.description, wiki: wikiMaterial(texts.wiki) }
+            : undefined,
+        );
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [top3, Boolean(aiConfig)]);
+  const aiPossible = Boolean(aiConfig) && autoOn && !autoBlurbPaused();
 
   const decide = useCallback(
     (verdict: SignalVerdict) => {
@@ -166,10 +202,11 @@ export default function Swipe() {
     <div>
       <div className="page-head">
         <h1>Bücher-Stapel</h1>
-        <p className="muted mobile-only small">Spannend = mehr in diese Richtung · Merken = auf die Merkliste</p>
+        <p className="muted mobile-only small">Mehr davon = die Richtung stimmt · Merken = dieses Buch will ich lesen (zählt auch als „mehr davon“)</p>
         <p className="muted desk-only">
-          Eine Karte nach der anderen: <b>Spannend</b> heisst „mehr in diese Richtung“, <b>Merken</b> legt das Buch zusätzlich auf die Merkliste. Jede
-          Entscheidung wird gespeichert und fliesst in alle Empfehlungen ein.
+          Eine Entscheidung pro Karte. <b>Mehr davon</b>: Die Richtung stimmt – das Buch selbst muss es nicht sein. <b>Merken</b>: Dieses Buch willst du
+          lesen; es kommt auf die Merkliste und zählt auch als „mehr davon“, sogar etwas stärker. Beides zusammen braucht es nie. Jede Entscheidung wird
+          gespeichert und fliesst in alle Empfehlungen ein.
           <span>
             {' '}
             Tastatur: <kbd>←</kbd> <kbd>↓</kbd> <kbd>↑</kbd> <kbd>→</kbd>, rückgängig mit <kbd>Z</kbd>.
@@ -181,7 +218,7 @@ export default function Swipe() {
         <div className="deck">
           {current ? (
             <article key={current.id} className={`deck-card ${leaving ? `leaving ${leaving}` : ''}`} aria-live="polite">
-              <SwipeCardContent book={current} why={currentWhy} />
+              <SwipeCardContent book={current} why={currentWhy} aiPossible={aiPossible} />
             </article>
           ) : (
             <div className="deck-card deck-empty">
@@ -272,7 +309,7 @@ export default function Swipe() {
                           <span className="muted">{b.authors[0]}</span>
                         </span>
                       </Link>
-                      {/* „Spannend“ lässt sich hier nachträglich zu „Merken“ machen – und umgekehrt */}
+                      {/* „Mehr davon“ lässt sich hier nachträglich zu „Merken“ machen – und umgekehrt */}
                       <button
                         className={`mini-btn ${saved ? 'on' : ''}`}
                         style={{ boxShadow: 'none', border: '1px solid var(--line)', flexShrink: 0 }}
@@ -311,16 +348,12 @@ export default function Swipe() {
   );
 }
 
-function SwipeCardContent({ book, preview = false, why }: { book: Book; preview?: boolean; why?: string }) {
-  const work = useAsync(async (signal) => (preview ? undefined : settle(getWork(book.id, signal))), [book.id, preview]);
-  const wikidataId = work.data?.wikidataId;
-  const wiki = useAsync(
-    async (signal) =>
-      preview || work.loading ? undefined : germanWikipediaSummary({ wikidataId, titles: [book.title], author: book.authors[0] }, signal).catch(() => undefined),
-    [book.id, preview, work.loading, wikidataId],
-  );
+function SwipeCardContent({ book, preview = false, why, aiPossible = false }: { book: Book; preview?: boolean; why?: string; aiPossible?: boolean }) {
+  const { googleApiKey, region } = useSettings();
+  const texts = useAsync(async (signal) => (preview ? undefined : loadBookTexts(book, { googleApiKey, country: region, signal })), [book.id, preview]);
+  const view = useBlurbs((s) => s.items[book.id]);
   const subjects = displaySubjects(book.subjects, 5);
-  const about = describe(book, wiki.data, work.data?.description);
+  const about = preview ? undefined : cardText(book, texts.data, texts.loading, view, aiPossible);
   const isbn = book.isbns?.[0];
   const [expanded, setExpanded] = useState(false);
   useEffect(() => setExpanded(false), [book.id]);
@@ -350,14 +383,28 @@ function SwipeCardContent({ book, preview = false, why }: { book: Book; preview?
               ))}
             </div>
           )}
-          {about && (
-            <p className={`swipe-text ${expanded ? 'open' : ''}`} onClick={() => setExpanded(true)}>
-              <span className="swipe-src">{about.label}</span>
-              {expanded ? about.text : truncate(about.text, 600)}
+          {about === 'waiting' ? (
+            <p className="swipe-text muted">
+              <span className="spinner" /> {texts.loading ? 'Beschreibung wird gesucht …' : 'Deutsche Kurzbeschreibung wird geschrieben …'}
             </p>
-          )}
-          <Link to={bookPath(book)} onClick={() => rememberBook(book)} className="small">
-            Details & Angebote →
+          ) : about ? (
+            <div className={`swipe-text ${expanded ? 'open' : ''}`} onClick={() => setExpanded(true)}>
+              <span className="swipe-src">{about.label}</span>
+              {(expanded ? about.text : truncate(about.text, 750))
+                .split(/\n\s*\n/)
+                .filter(Boolean)
+                .map((p, i) => (
+                  <p key={i} className="mb-0">
+                    {p.trim()}
+                  </p>
+                ))}
+              {about.fit && <p className="swipe-fit mb-0">{about.fit}</p>}
+              {about.source && <span className="tiny muted">{about.source}</span>}
+            </div>
+          ) : null}
+          {/* In einem neuen Tab – der Stapel bleibt, wo er ist */}
+          <Link to={bookPath(book)} target="_blank" rel="noopener" onClick={() => rememberBook(book)} className="small">
+            Details & Angebote ↗
           </Link>
         </div>
       )}
@@ -366,20 +413,37 @@ function SwipeCardContent({ book, preview = false, why }: { book: Book; preview?
 }
 
 /**
- * Was auf der Karte steht – der Inhalt zuerst: KI-Kurzfassung (falls schon erzeugt), Ausgangslage
- * aus dem Wikipedia-Abschnitt „Handlung“, inhaltliche Sätze der Einleitung, Klappentext. Angaben
- * zu Verlag und Erfolg nur, wenn es sonst nichts gibt.
+ * Was auf der Karte steht – der Inhalt zuerst, auf Deutsch:
+ *   1. ein gehaltvoller deutscher Text (Wikipedia, deutscher Klappentext), dazu – falls schon
+ *      vorhanden – der Satz „Passt zu dir, weil …“ aus der KI-Kurzbeschreibung
+ *   2. sonst die KI-Kurzbeschreibung (wird bei Bedarf geschrieben – kurz warten)
+ *   3. erst ohne KI (Kontingent aufgebraucht): was es sonst gibt, auch Fremdsprachiges
  */
-function describe(book: Book, wiki: WikiSummary | undefined, blurb: string | undefined): { label: string; text: string } | undefined {
-  const ai = readBlurb(book.id);
-  if (ai) return { label: 'Worum es geht', text: ai.text };
-  const content = wiki ? contentSummary(wiki, 420) : undefined;
-  if (content) return { label: 'Worum es geht', text: content.text };
+function cardText(
+  book: Book,
+  texts: BookTexts | undefined,
+  loading: boolean,
+  view: BlurbView | undefined,
+  aiPossible: boolean,
+): { label: string; text: string; fit?: string; source?: string } | 'waiting' | undefined {
+  if (!texts && loading) return view?.text ? { label: 'Worum es geht', text: view.text, source: 'KI-Kurzbeschreibung' } : 'waiting';
+  const rich = texts ? richGermanText(texts, 800) : undefined;
+  if (rich) return { label: rich.label, text: rich.text, fit: view?.text ? fitSentence(view.text) : undefined, source: rich.source };
+  if (view?.text) return { label: 'Worum es geht', text: view.text, source: view.busy ? undefined : `KI-Kurzbeschreibung${view.model ? ` · ${view.model}` : ''}` };
+  if (aiPossible && !view?.error && (view?.busy || view?.pending || !view?.checked)) return 'waiting';
+  return fallbackText(book, texts);
+}
+
+function fallbackText(book: Book, texts: BookTexts | undefined): { label: string; text: string; source?: string } | undefined {
+  const wiki = texts?.wiki;
+  const content = wiki ? contentSummary(wiki, 700) : undefined;
+  if (content) return { label: 'Worum es geht', text: content.text, source: 'Wikipedia' };
+  const blurb = texts?.description;
   if (blurb) {
     const lang = guessLanguage(blurb);
     return { label: lang && lang !== 'ger' ? `Klappentext (${languageLabel(lang)})` : 'Klappentext', text: blurb };
   }
-  if (wiki) return { label: 'Über das Buch', text: wiki.extract };
+  if (wiki) return { label: 'Über das Buch', text: wiki.extract, source: 'Wikipedia' };
   if (book.firstSentence) return { label: 'So beginnt es', text: `„${book.firstSentence}“` };
   return undefined;
 }

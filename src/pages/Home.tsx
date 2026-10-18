@@ -9,6 +9,7 @@ import { isProfileUsable } from '../lib/profile';
 import { MOODS } from '../lib/taxonomy';
 import { impressionsReady, staleness } from '../store/impressions';
 import { useSettings } from '../store/settings';
+import { dismissedIds, useSignals } from '../store/signals';
 import { useWishlist } from '../store/wishlist';
 
 const EXAMPLES = [
@@ -27,7 +28,7 @@ const MODES = [
   { to: '/fuer-dich', title: 'Für dich', text: 'Empfehlungen aus deinen gelesenen Büchern und Bewertungen.' },
   { to: '/bibliothekar', title: 'KI-Bibliothekar', text: 'Erzähl, worauf du Lust hast – die KI kennt deine Bücher.' },
   { to: '/bibliothek', title: 'Bibliothek & Lese-DNA', text: 'Goodreads verbinden, Merkliste und Lesestatistik.' },
-  { to: '/swipe', title: 'Bücher-Stapel', text: 'Spannend, merken oder weiter – der Stapel lernt deinen Geschmack.' },
+  { to: '/swipe', title: 'Bücher-Stapel', text: 'Mehr davon, merken oder weiter – der Stapel lernt deinen Geschmack.' },
   { to: '/gluecksrad', title: 'Glücksrad & Blind Date', text: 'Bücher erst über ihren ersten Satz kennenlernen.' },
   { to: '/orakel', title: 'Lese-Orakel', text: 'Sieben Fragen zur heutigen Lesestimmung.' },
   { to: '/themen', title: 'Themen-Netz', text: 'Von Thema zu Thema neue Welten finden.' },
@@ -68,8 +69,10 @@ export default function Home() {
         impressionsReady(),
       ]);
       const ctx = { profile: usable ? profile : undefined, readIndex, language, staleness: (id: string) => staleness(id) };
-      const forYou = usable ? rankForHome([...taste, ...discover], { ...ctx, minRating: 3.75 }) : [];
-      const shown = new Set(forYou.map((s) => s.book.id));
+      // Ausgeblendetes und „Nicht meins“ kommen nicht mehr vor
+      const hidden = dismissedIds(useSignals.getState().signals);
+      const forYou = usable ? rankForHome([...taste, ...discover], { ...ctx, exclude: hidden, minRating: 3.75 }) : [];
+      const shown = new Set([...hidden, ...forYou.map((s) => s.book.id)]);
       const discoveries = rankForHome(discover, { ...ctx, exclude: shown, minRating: 3.8 });
       for (const s of discoveries) shown.add(s.book.id);
       const newest = rankForHome(fresh, { ...ctx, exclude: shown, max: 14 });
@@ -159,6 +162,7 @@ export default function Home() {
         <BookRow
           title="Deine Merkliste"
           items={wishItems}
+          keepHidden
           action={
             <Link to="/bibliothek?tab=merkliste" className="btn btn-sm">
               Alle ansehen →

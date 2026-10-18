@@ -30,7 +30,7 @@ const NAV = [
 ];
 
 const PLAY = [
-  { to: '/swipe', label: 'Bücher-Stapel', hint: 'Spannend, merken oder weiter' },
+  { to: '/swipe', label: 'Bücher-Stapel', hint: 'Mehr davon, merken oder weiter' },
   { to: '/gluecksrad', label: 'Glücksrad & Blind Date', hint: 'Zufall mit Stil' },
   { to: '/orakel', label: 'Lese-Orakel', hint: '7 Fragen, 1 Lesestimmung' },
   { to: '/themen', label: 'Themen-Netz', hint: 'Von Thema zu Thema springen' },

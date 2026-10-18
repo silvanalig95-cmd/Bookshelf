@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Book, SignalVerdict, TasteSignal } from '../lib/types';
@@ -47,3 +48,23 @@ export const useSignals = create<SignalsState>()(
     { name: 'lesekompass.signals', version: 1 },
   ),
 );
+
+/** Bücher, die nicht mehr vorgeschlagen werden: „Nicht meins“ und Ausgeblendetes. */
+export function dismissedIds(signals: TasteSignal[]): Set<string> {
+  return new Set(signals.filter((s) => s.verdict === 'dislike' || s.verdict === 'hide').map((s) => s.bookId));
+}
+
+export function useDismissed(): Set<string> {
+  const signals = useSignals((s) => s.signals);
+  return useMemo(() => dismissedIds(signals), [signals]);
+}
+
+/**
+ * Aus den Vorschlägen ausblenden („erledigt“). Zählt nur leise gegen ähnliche Bücher (siehe
+ * profile.ts und swipeModel.ts). Gibt eine Funktion zum Rückgängigmachen zurück.
+ */
+export function hideBook(book: Book): () => void {
+  const previous = useSignals.getState().signals.find((s) => s.bookId === book.id);
+  useSignals.getState().record(book, 'hide');
+  return () => useSignals.getState().restore(book.id, previous);
+}

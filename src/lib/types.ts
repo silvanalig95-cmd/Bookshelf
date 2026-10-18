@@ -106,7 +106,11 @@ export interface WishlistItem {
   origin?: string;
 }
 
-export type SignalVerdict = 'like' | 'dislike' | 'save' | 'read';
+/**
+ * Entscheidungen zu einem Buch. „hide“ = aus den Vorschlägen ausgeblendet bzw. erledigt: zählt nur
+ * schwach gegen ähnliche Bücher – erst viele Ausgeblendete einer Richtung verschieben den Geschmack.
+ */
+export type SignalVerdict = 'like' | 'dislike' | 'save' | 'read' | 'hide';
 
 export interface TasteSignal {
   bookId: string;

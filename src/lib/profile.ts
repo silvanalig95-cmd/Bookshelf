@@ -91,13 +91,16 @@ export function signalWeight(s: TasteSignal): number {
   switch (s.verdict) {
     case 'like':
       return 1.2;
-    // Merken = „will ich lesen“ – stärker als nur „klingt spannend“
+    // Merken = „will ich lesen“ – stärker als nur „mehr davon“
     case 'save':
       return 1.5;
     case 'read':
       return 0.8;
     case 'dislike':
       return -0.9;
+    // Ausgeblendet: nur ein leiser Hinweis, erst viele davon verschieben das Profil
+    case 'hide':
+      return -0.12;
   }
 }
 
