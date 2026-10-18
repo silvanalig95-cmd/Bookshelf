@@ -3,7 +3,7 @@
  * Nur Typen: der Server bindet diese Datei mit `import type` ein.
  */
 
-export type SyncCollection = 'library' | 'wishlist' | 'signals' | 'settings';
+export type SyncCollection = 'library' | 'wishlist' | 'signals' | 'settings' | 'owned';
 
 /** Ein Datensatz auf dem Weg zwischen Gerät und Server. */
 export interface SyncChange {

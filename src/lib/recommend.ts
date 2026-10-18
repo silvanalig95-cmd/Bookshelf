@@ -8,14 +8,14 @@
  *  - Geheimtipps: gut bewertet, aber kaum bekannt – in deinen Themen.
  *  - Über den Tellerrand: verwandte Themen, die du selten liest (Serendipität).
  */
-import { rotate } from './freshness';
+import { rotate, spreadAuthors } from './freshness';
 import { ageWeight, bayesRating, discoveryPrior, distinctiveSubjects, hasGerman, MIN_RATINGS, mergeBooks } from './discovery';
 import { settle } from './http';
 import { docToBook, getSubject, searchWorks, subjectKey, type OLSort } from './openLibrary';
 import { conceptsOf, tasteMatch, type TasteProfile } from './profile';
 import type { ReadIndex } from '../store/library';
 import { isNoiseSubject, subjectLabel } from './taxonomy';
-import { clamp, solrPhrase } from './text';
+import { authorSurname, clamp, solrPhrase } from './text';
 import type { Book, LanguagePreference, LibraryEntry, Reason, ScoredBook } from './types';
 
 export interface RecSection {
@@ -63,10 +63,19 @@ export function scoreForProfile(book: Book, ctx: RecContext, extraReasons: Reaso
   return { book, score, match, reasons };
 }
 
-function rank(books: Book[], ctx: RecContext, extra: Reason[] = [], max = 18): ScoredBook[] {
-  const scored = books.map((b) => scoreForProfile(b, ctx, extra)).filter((x): x is ScoredBook => Boolean(x));
-  return (ctx.fatigue ? rotate(scored, ctx.fatigue) : scored).sort((a, b) => b.score - a.score).slice(0, max);
+/** Gesehenes macht Platz (ctx.fatigue), dann höchstens `perAuthor` Bücher pro Autor:in. */
+function freshOrder(scored: ScoredBook[], ctx: RecContext, perAuthor: number): ScoredBook[] {
+  const rotated = ctx.fatigue ? rotate(scored, ctx.fatigue) : scored;
+  return spreadAuthors(rotated.sort((a, b) => b.score - a.score), perAuthor);
 }
+
+function rank(books: Book[], ctx: RecContext, extra: Reason[] = [], max = 18, perAuthor = 1): ScoredBook[] {
+  const scored = books.map((b) => scoreForProfile(b, ctx, extra)).filter((x): x is ScoredBook => Boolean(x));
+  return freshOrder(scored, ctx, perAuthor).slice(0, max);
+}
+
+/** Bei jedem Besuch eine andere Seite der Trefferliste – damit nicht immer dieselben Bücher vorne liegen. */
+const someOffset = () => [0, 0, 20, 40][Math.floor(Math.random() * 4)];
 
 /** Bücher, die Lieblingsbüchern ähneln („Weil du X mochtest“). */
 export async function becauseYouLiked(entry: LibraryEntry, ctx: RecContext): Promise<RecSection | undefined> {
@@ -77,7 +86,8 @@ export async function becauseYouLiked(entry: LibraryEntry, ctx: RecContext): Pro
   const specific = candidates.filter((s) => !conceptsOf([s]).every((c) => common.has(c)));
   const subjects = (specific.length >= 2 ? specific : candidates).slice(0, 5);
   if (subjects.length < 2) return undefined;
-  const books = await query(`subject:(${subjects.map(solrPhrase).join(' OR ')})${langClause(ctx.language)}`, 'readinglog', 50);
+  const q = `subject:(${subjects.map(solrPhrase).join(' OR ')})${langClause(ctx.language)}`;
+  const books = mergeBooks(await Promise.all([query(q, 'readinglog', 50, someOffset()), query(q, 'random.hourly', 30)]));
   const refConcepts = new Set(conceptsOf(subjects));
   const items = books
     .filter((b) => b.workKey !== entry.workKey)
@@ -89,15 +99,14 @@ export async function becauseYouLiked(entry: LibraryEntry, ctx: RecContext): Pro
       scored.score = scored.score * 0.5 + Math.min(4, overlap) * 0.15;
       return scored;
     })
-    .filter((x): x is ScoredBook => Boolean(x))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 14);
-  if (items.length < 3) return undefined;
+    .filter((x): x is ScoredBook => Boolean(x));
+  const ordered = freshOrder(items, ctx, 2).slice(0, 14);
+  if (ordered.length < 3) return undefined;
   return {
     id: `because-${entry.id}`,
     title: `Weil du „${entry.title.replace(/\s*\(.*?\)\s*/g, ' ').trim()}“ mochtest`,
     subtitle: `${'★'.repeat(entry.rating || 0)} · ${subjects.slice(0, 3).map(subjectLabel).join(', ')}`,
-    items,
+    items: ordered,
   };
 }
 
@@ -107,8 +116,10 @@ export async function topMatches(ctx: RecContext): Promise<RecSection | undefine
   const groups = [subjects.slice(0, 4), subjects.slice(4, 8), subjects.slice(8, 12)].filter((g) => g.length);
   const lists = await Promise.all(
     groups.flatMap((g) => [
-      query(`subject:(${g.map(solrPhrase).join(' OR ')}) ratings_count:[${MIN_RATINGS} TO *]${langClause(ctx.language)}`, 'rating', 40),
-      query(`subject:(${g.map(solrPhrase).join(' OR ')})${langClause(ctx.language)}`, 'readinglog', 40),
+      query(`subject:(${g.map(solrPhrase).join(' OR ')}) ratings_count:[${MIN_RATINGS} TO *]${langClause(ctx.language)}`, 'rating', 40, someOffset()),
+      query(`subject:(${g.map(solrPhrase).join(' OR ')})${langClause(ctx.language)}`, 'readinglog', 40, someOffset()),
+      // Zufällige Auswahl, die stündlich wechselt – bringt Bücher nach vorne, die sonst nie oben landen
+      query(`subject:(${g.map(solrPhrase).join(' OR ')}) ratings_count:[${MIN_RATINGS} TO *]${langClause(ctx.language)}`, 'random.hourly', 40),
     ]),
   );
   const items = rank(mergeBooks(lists), ctx, [], 24);
@@ -117,7 +128,8 @@ export async function topMatches(ctx: RecContext): Promise<RecSection | undefine
 }
 
 export async function favoriteAuthorsSection(ctx: RecContext): Promise<RecSection | undefined> {
-  const authors = ctx.profile.favoriteAuthors.slice(0, 8);
+  // Jedes Mal eine andere Auswahl aus den Lieblingsautor:innen
+  const authors = [...ctx.profile.favoriteAuthors.slice(0, 14)].sort(() => Math.random() - 0.5).slice(0, 7);
   if (!authors.length) return undefined;
   const lists = await Promise.all(authors.map((a) => query(`author:${solrPhrase(a.name)}${langClause(ctx.language)}`, 'readinglog', 12)));
   const items = lists
@@ -125,22 +137,18 @@ export async function favoriteAuthorsSection(ctx: RecContext): Promise<RecSectio
       list
         .filter((b) => b.authors.some((x) => x.toLowerCase().includes(authors[i].name.split(' ').pop()!.toLowerCase())))
         .map((b) => scoreForProfile(b, ctx, [{ kind: 'author', label: 'Lieblingsautor:in' }]))
-        .filter((x): x is ScoredBook => Boolean(x))
-        .slice(0, 3),
-    )
-    .sort((a, b) => b.score - a.score);
-  if (!items.length) return undefined;
-  return { id: 'authors', title: 'Mehr von deinen Lieblingsautor:innen', subtitle: authors.map((a) => a.name).slice(0, 5).join(' · '), items };
+        .filter((x): x is ScoredBook => Boolean(x)),
+    );
+  const ordered = freshOrder(items, ctx, 2);
+  if (!ordered.length) return undefined;
+  return { id: 'authors', title: 'Mehr von deinen Lieblingsautor:innen', subtitle: authors.map((a) => a.name).slice(0, 5).join(' · '), items: ordered.slice(0, 18) };
 }
 
 export async function hiddenGems(ctx: RecContext): Promise<RecSection | undefined> {
   const subjects = ctx.profile.querySubjects.slice(0, 6);
   if (subjects.length < 2) return undefined;
-  const books = await query(
-    `subject:(${subjects.map(solrPhrase).join(' OR ')}) readinglog_count:[1 TO 150] ratings_count:[3 TO *]${langClause(ctx.language)}`,
-    'rating',
-    50,
-  );
+  const q = `subject:(${subjects.map(solrPhrase).join(' OR ')}) readinglog_count:[1 TO 150] ratings_count:[3 TO *]${langClause(ctx.language)}`;
+  const books = mergeBooks(await Promise.all([query(q, 'rating', 50, someOffset()), query(q, 'random.hourly', 40)]));
   const items = rank(books, ctx, [{ kind: 'fame', label: 'Geheimtipp' }], 16).filter((s) => (bayesRating(s.book) ?? 0) >= 3.9);
   if (items.length < 3) return undefined;
   return { id: 'gems', title: 'Geheimtipps für dich', subtitle: 'Sehr gut bewertet, aber kaum bekannt', items };
@@ -166,11 +174,10 @@ export async function beyondTheEdge(ctx: RecContext): Promise<RecSection | undef
       if (s) s.score = (bayesRating(b) ?? 3.5) + Math.random() * 0.3;
       return s;
     })
-    .filter((x): x is ScoredBook => Boolean(x))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 14);
-  if (items.length < 3) return undefined;
-  return { id: 'edge', title: 'Über den Tellerrand', subtitle: `Verwandt mit „${subjectLabel(seed)}“, aber neu für dich: ${fresh.map(subjectLabel).join(', ')}`, items };
+    .filter((x): x is ScoredBook => Boolean(x));
+  const ordered = freshOrder(items, ctx, 1).slice(0, 14);
+  if (ordered.length < 3) return undefined;
+  return { id: 'edge', title: 'Über den Tellerrand', subtitle: `Verwandt mit „${subjectLabel(seed)}“, aber neu für dich: ${fresh.map(subjectLabel).join(', ')}`, items: ordered };
 }
 
 /** Die Lieblingsbücher, für die „Weil du X mochtest“-Reihen gebaut werden. */
@@ -209,8 +216,21 @@ export function uniqueAcrossSections(sections: RecSection[]): RecSection[] {
     const ib = order.indexOf(b.id) === -1 ? 1.5 : order.indexOf(b.id);
     return ia - ib;
   });
+  // Über alle Reihen höchstens drei Bücher pro Autor:in (ausser in „Mehr von deinen Lieblingsautor:innen“)
+  const perAuthor = new Map<string, number>();
   return sorted
-    .map((s) => ({ ...s, items: s.items.filter((i) => (seen.has(i.book.id) ? false : (seen.add(i.book.id), true))) }))
+    .map((s) => {
+      const unique = s.items.filter((i) => (seen.has(i.book.id) ? false : (seen.add(i.book.id), true)));
+      if (s.id === 'authors') return { ...s, items: unique };
+      const kept = unique.filter((i) => {
+        const a = authorSurname(i.book.authors[0] ?? '');
+        const n = perAuthor.get(a) ?? 0;
+        if (a && n >= 3) return false;
+        perAuthor.set(a, n + 1);
+        return true;
+      });
+      return { ...s, items: kept };
+    })
     .filter((s) => s.items.length >= 3);
 }
 

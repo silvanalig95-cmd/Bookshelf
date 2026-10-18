@@ -230,7 +230,7 @@ export default function Wheel() {
                       ) : (
                         <div className="bd-back">
                           <Link to={bookPath(b)} onClick={() => rememberBook(b)}>
-                            <Cover title={b.title} author={b.authors[0]} coverId={b.coverId} src={b.coverUrl} fallbacks={isbn ? [isbnCoverUrl(isbn)] : []} style={{ width: 110 }} />
+                            <Cover title={b.title} author={b.authors[0]} coverId={b.coverId} src={b.coverUrl} isbn={isbn} fallbacks={isbn ? [isbnCoverUrl(isbn)] : []} style={{ width: 110 }} />
                           </Link>
                           <div>
                             <Link to={bookPath(b)} onClick={() => rememberBook(b)} style={{ color: 'var(--ink)' }}>

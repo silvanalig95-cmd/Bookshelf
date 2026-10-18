@@ -11,7 +11,7 @@ import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, re
 import { join } from 'node:path';
 import type { SyncChange, SyncCollection, SyncMismatch, SyncResponse } from '../src/lib/syncProtocol.ts';
 
-export const SYNC_COLLECTIONS: readonly SyncCollection[] = ['library', 'wishlist', 'signals', 'settings'];
+export const SYNC_COLLECTIONS: readonly SyncCollection[] = ['library', 'wishlist', 'signals', 'settings', 'owned'];
 export const MAX_SYNC_CHANGES = 5000;
 const MAX_ID_LENGTH = 300;
 const MAX_VALUE_LENGTH = 256 * 1024;
@@ -49,7 +49,7 @@ export function syncFileName(user: string | null): string {
 }
 
 function emptyCollections(): UserData['collections'] {
-  return { library: {}, wishlist: {}, signals: {}, settings: {} };
+  return { library: {}, wishlist: {}, signals: {}, settings: {}, owned: {} };
 }
 
 function parseRequest(input: unknown): { serverId?: string; since: number; changes: SyncChange[] } {
@@ -167,7 +167,7 @@ export class SyncStore {
 
   counts(user: string | null): Record<SyncCollection, number> {
     const data = this.load(user);
-    const counts = { library: 0, wishlist: 0, signals: 0, settings: 0 };
+    const counts = { library: 0, wishlist: 0, signals: 0, settings: 0, owned: 0 };
     for (const c of SYNC_COLLECTIONS) for (const rec of Object.values(data.collections[c])) if (!rec.d) counts[c]++;
     return counts;
   }

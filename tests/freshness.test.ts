@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decayedCount, fatigueFromCount, HALF_LIFE_DAYS, rotate } from '../src/lib/freshness';
+import { decayedCount, fatigueFromCount, HALF_LIFE_DAYS, rotate, spreadAuthors } from '../src/lib/freshness';
 import { fatigue, useImpressions } from '../src/store/impressions';
 import type { Book, ScoredBook } from '../src/lib/types';
 
@@ -43,5 +43,14 @@ describe('Gesehene Bücher', () => {
     expect(fatigue('OL1W', t0 + 36 * 3600_000)).toBeGreaterThan(0.2);
     engage('OL1W');
     expect(fatigue('OL1W')).toBe(0);
+  });
+});
+
+describe('Abwechslung bei den Autor:innen', () => {
+  const item = (id: string, author: string) => ({ book: { id, title: id, authors: [author], subjects: [], languages: [], source: 'openlibrary' as const } });
+  it('lässt höchstens zwei Bücher pro Person vorne und schiebt den Rest ans Ende', () => {
+    const list = [item('a', 'Terry Pratchett'), item('b', 'Terry Pratchett'), item('c', 'Terry Pratchett'), item('d', 'Andy Weir'), item('e', 'T. Pratchett')];
+    expect(spreadAuthors(list, 2).map((x) => x.book.id)).toEqual(['a', 'b', 'd', 'c', 'e']);
+    expect(spreadAuthors(list, 1).map((x) => x.book.id)).toEqual(['a', 'd', 'b', 'c', 'e']);
   });
 });

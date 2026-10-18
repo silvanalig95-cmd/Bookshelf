@@ -465,7 +465,7 @@ function SyncCard() {
       </div>
       {c && on && (
         <p className="small muted">
-          Auf dem Server: {c.library} {c.library === 1 ? 'Buch' : 'Bücher'} · {c.wishlist} auf der Merkliste · {c.signals} Stapel-Entscheidung{c.signals === 1 ? '' : 'en'}
+          Auf dem Server: {c.library} {c.library === 1 ? 'Buch' : 'Bücher'} · {c.wishlist} auf der Merkliste · {c.owned ?? 0} im Besitz · {c.signals} Stapel-Entscheidung{c.signals === 1 ? '' : 'en'}
         </p>
       )}
       <label className="toggle" style={{ marginBottom: 12 }}>

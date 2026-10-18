@@ -10,7 +10,7 @@ type Records = Record<string, unknown>;
 
 /** Ein simuliertes Gerät mit eigenen Sammlungen, eigener Uhr und eigenem Login. */
 class Device {
-  data: Record<SyncCollection, Records> = { library: {}, wishlist: {}, signals: {}, settings: { region: 'CH' } };
+  data: Record<SyncCollection, Records> = { library: {}, wishlist: {}, signals: {}, settings: { region: 'CH' }, owned: {} };
   meta: SyncMeta = emptyMeta();
   saved = 0;
   online = true;

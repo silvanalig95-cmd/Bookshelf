@@ -302,7 +302,7 @@ export default function Swipe() {
                   return (
                     <div key={b.id} className="row" style={{ gap: 10 }}>
                       <Link to={bookPath(b)} onClick={() => rememberBook(b)} className="row" style={{ color: 'var(--ink)', flex: 1, minWidth: 0 }}>
-                        <Cover title={b.title} coverId={b.coverId} size="S" style={{ width: 34 }} />
+                        <Cover title={b.title} coverId={b.coverId} isbn={b.isbns?.[0]} size="S" style={{ width: 34 }} />
                         <span className="small" style={{ lineHeight: 1.25 }}>
                           <b>{b.title}</b>
                           <br />
@@ -359,7 +359,7 @@ function SwipeCardContent({ book, preview = false, why, aiPossible = false }: { 
   useEffect(() => setExpanded(false), [book.id]);
   return (
     <div className="swipe-content">
-      <Cover title={book.title} author={book.authors[0]} coverId={book.coverId} src={book.coverUrl} size="L" fallbacks={isbn ? [isbnCoverUrl(isbn, 'L')] : []} className="swipe-cover" />
+      <Cover title={book.title} author={book.authors[0]} coverId={book.coverId} src={book.coverUrl} isbn={isbn} size="L" fallbacks={isbn ? [isbnCoverUrl(isbn, 'L')] : []} className="swipe-cover" />
       <div className="swipe-head-info">
         <div className="small muted">
           {[why, book.year, book.pages ? `${book.pages} Seiten` : undefined, hasGerman(book) ? undefined : 'nicht auf Deutsch'].filter(Boolean).join(' · ')}

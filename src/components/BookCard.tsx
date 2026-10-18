@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { isbnCoverUrl } from '../lib/openLibrary';
 import type { Book, ScoredBook } from '../lib/types';
 import { useImpressions, watchImpression } from '../store/impressions';
+import { ownedLabel, useOwned } from '../store/owned';
 import { hideBook, useDismissed, useSignals } from '../store/signals';
 import { rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
@@ -35,6 +36,7 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, o
   const saved = useWishlist((s) => Boolean(s.items[book.id]));
   const toggle = useWishlist((s) => s.toggle);
   const record = useSignals((s) => s.record);
+  const owned = useOwned((s) => s.items[book.id]?.formats);
   const openRating = useUi((s) => s.openRating);
   const path = bookPath(book);
   const isbn = book.isbns?.[0];
@@ -59,13 +61,17 @@ export const BookCard = memo(function BookCard({ book, scored, maxReasons = 2, o
           }}
           aria-label={`${book.title} öffnen`}
         >
-          <Cover title={book.title} author={book.authors[0]} coverId={book.coverId} src={book.coverUrl} fallbacks={isbn ? [isbnCoverUrl(isbn)] : []} />
+          <Cover title={book.title} author={book.authors[0]} coverId={book.coverId} src={book.coverUrl} isbn={isbn} fallbacks={isbn ? [isbnCoverUrl(isbn)] : []} />
         </Link>
-        {scored?.alreadyRead && (
+        {scored?.alreadyRead ? (
           <span className="read-badge tag" title="Steht in deiner Bibliothek">
             ✓ gelesen
           </span>
-        )}
+        ) : owned ? (
+          <span className="read-badge tag" title="In deinem Besitz">
+            {ownedLabel(owned)}
+          </span>
+        ) : null}
         {showActions && (
           <div className="card-actions">
             <button

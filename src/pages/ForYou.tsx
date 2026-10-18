@@ -4,10 +4,11 @@ import { BookRow } from '../components/BookCard';
 import { Empty, SkeletonGrid } from '../components/Feedback';
 import { useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { isProfileUsable, topGenres } from '../lib/profile';
-import { buildRecommendations, uniqueAcrossSections, type RecSection } from '../lib/recommend';
+import { buildRecommendations, scoreForProfile, uniqueAcrossSections, type RecSection } from '../lib/recommend';
 import type { Book, ScoredBook } from '../lib/types';
 import { impressionsReady, staleness } from '../store/impressions';
 import { useNightShift } from '../store/nightShift';
+import { useOwnedBooks } from '../store/owned';
 import { useSettings } from '../store/settings';
 import { dismissedIds, useSignals } from '../store/signals';
 
@@ -23,6 +24,13 @@ export default function ForYou() {
   const usable = isProfileUsable(profile);
   const runKey = useRef('');
   const suggestions = useNightShift((s) => s.results.suggestions);
+  // Was du schon besitzt, aber noch nicht gelesen hast – nach deinem Geschmack sortiert
+  const owned = useOwnedBooks();
+  const shelf = useMemo((): ScoredBook[] => {
+    const unread = owned.filter((b) => !readIndex.has(b));
+    const scored = unread.map((b) => (profile ? scoreForProfile(b, { profile, readIndex, language: 'any' }) : undefined) ?? { book: b, score: -1, match: 0, reasons: [] });
+    return scored.sort((a, b) => b.score - a.score);
+  }, [owned, readIndex, profile]);
   // Vorschläge der Nachtschicht: Neueste zuerst, ohne Gelesenes und Weggeklicktes
   const night = useMemo((): ScoredBook[] => {
     const dismissed = dismissedIds(signals);
@@ -127,6 +135,9 @@ export default function ForYou() {
         </div>
       </div>
 
+      {shelf.length > 0 && (
+        <BookRow title="Schon in deinem Regal" subtitle="Bücher, die du besitzt und noch nicht gelesen hast – das Passendste zuerst." items={shelf} origin="Besitz" keepHidden />
+      )}
       {night.length > 0 && (
         <BookRow title="Über Nacht gefunden" subtitle="Von der Nachtschicht vorgeschlagen – mit dem restlichen KI-Kontingent des Tages." items={night} origin="Nachtschicht" />
       )}

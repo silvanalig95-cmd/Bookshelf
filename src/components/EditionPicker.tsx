@@ -78,7 +78,7 @@ export function EditionPicker({ editions, total, selectedKey, onSelect, language
               role="option"
               aria-selected={e.key === selectedKey}
             >
-              <Cover title={e.title} coverId={e.coverId} src={e.coverUrl} size="S" fallbacks={e.isbn13 ? [isbnCoverUrl(e.isbn13, 'S')] : []} />
+              <Cover title={e.title} coverId={e.coverId} src={e.coverUrl} isbn={e.isbn13} size="S" fallbacks={e.isbn13 ? [isbnCoverUrl(e.isbn13, 'S')] : []} />
               <div style={{ minWidth: 0 }}>
                 <div className="e-title">{e.title}</div>
                 <div className="e-meta">{editionLabel(e) || 'Keine Angaben'}</div>

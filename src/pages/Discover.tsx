@@ -19,11 +19,11 @@ import { getBookByWorkId } from '../lib/openLibrary';
 import { resolveBook } from '../lib/resolve';
 import { toRef, understandWish } from '../lib/wish';
 import { ERAS, GENRES, MOODS, PLACES } from '../lib/taxonomy';
-import { pickRandom, shuffle, uniqBy } from '../lib/text';
+import { authorSurname, pickRandom, shuffle, uniqBy } from '../lib/text';
 import type { Book, ScoredBook } from '../lib/types';
-import { rotate } from '../lib/freshness';
+import { rotate, spreadAuthors } from '../lib/freshness';
 import { useDiscover } from '../store/discover';
-import { fatigue, impressionsReady } from '../store/impressions';
+import { fatigue, impressionsReady, staleness } from '../store/impressions';
 import { useSettings } from '../store/settings';
 import { recallBook, rememberBook } from '../store/ui';
 
@@ -199,11 +199,11 @@ export default function Discover() {
         );
         if (controller.signal.aborted) return;
         const dismissedSet = new Set(useDiscover.getState().dismissed);
-        // Lange Ignoriertes rutscht nach hinten, die Reihenfolge rotiert täglich leicht
+        // Kürzlich Gesehenes macht Platz (kommt nach ein, zwei Wochen wieder), lange Ignoriertes rutscht weit nach hinten
         await impressionsReady();
         const fresh = rotate(
           res.results.filter((r) => !dismissedSet.has(r.book.id)),
-          (id) => fatigue(id),
+          (id) => Math.max(fatigue(id), staleness(id) * 0.6),
         );
         fresh.forEach((r) => rememberBook(r.book));
         const list = pageNum === 0 ? fresh : uniqBy([...useDiscover.getState().results, ...fresh], (r) => r.book.id);
@@ -231,7 +231,7 @@ export default function Discover() {
   const sorted = useMemo(() => {
     const list = [...results];
     const s = params.sort;
-    if (s === 'match') return list.sort((a, b) => b.score - a.score);
+    if (s === 'match') return authorVariety(list.sort((a, b) => b.score - a.score));
     if (s === 'rating') return list.sort((a, b) => (b.book.rating ?? 0) * Math.min(1, (b.book.ratingsCount ?? 0) / 5) - (a.book.rating ?? 0) * Math.min(1, (a.book.ratingsCount ?? 0) / 5));
     if (s === 'popular') return list.sort((a, b) => (b.book.popularity ?? 0) - (a.book.popularity ?? 0));
     if (s === 'new') return list.sort((a, b) => (b.book.year ?? 0) - (a.book.year ?? 0));
@@ -726,4 +726,19 @@ export default function Discover() {
       </div>
     </div>
   );
+}
+
+/**
+ * Nicht zehnmal dieselbe Autorin hintereinander: höchstens zwei Bücher pro Person vorne. Ausser
+ * die Suche gilt offensichtlich einer Person (dann stammt fast alles von ihr).
+ */
+function authorVariety(list: ScoredBook[]): ScoredBook[] {
+  const counts = new Map<string, number>();
+  for (const r of list.slice(0, 40)) {
+    const a = authorSurname(r.book.authors[0] ?? '');
+    counts.set(a, (counts.get(a) ?? 0) + 1);
+  }
+  const top = Math.max(0, ...counts.values());
+  if (top >= Math.min(40, list.length) * 0.4) return list;
+  return spreadAuthors(list, 2);
 }

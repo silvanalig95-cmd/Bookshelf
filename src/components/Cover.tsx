@@ -10,6 +10,15 @@ function hash(s: string): number {
   return Math.abs(h);
 }
 
+/**
+ * Aktuelle Verlags-Cover aus dem Verzeichnis lieferbarer Bücher, über die Deutsche Nationalbibliothek:
+ * scharf und modern, aber nur für Bücher deutschsprachiger Verlage (ISBN 978-3-…). Sonst Open Library.
+ */
+export function publisherCoverUrl(isbn: string | undefined, size: 'S' | 'M' | 'L' = 'M'): string | undefined {
+  if (!isbn || !/^9783\d{9}$/.test(isbn)) return undefined;
+  return `https://portal.dnb.de/opac/mvb/cover?isbn=${isbn}&size=${size === 'S' ? 'm' : 'l'}`;
+}
+
 interface CoverProps {
   title: string;
   author?: string;
@@ -17,13 +26,15 @@ interface CoverProps {
   src?: string;
   /** Weitere Kandidaten (z. B. ISBN-Cover), falls das erste Bild fehlt. */
   fallbacks?: string[];
+  /** ISBN-13 der Ausgabe – bei deutschsprachigen Verlagen kommt das Verlags-Cover zuerst. */
+  isbn?: string;
   size?: 'S' | 'M' | 'L';
   className?: string;
   style?: React.CSSProperties;
 }
 
-export function Cover({ title, author, coverId, src, fallbacks = [], size = 'M', className, style }: CoverProps) {
-  const candidates = [src, coverUrl(coverId, size), ...fallbacks].filter((x): x is string => Boolean(x));
+export function Cover({ title, author, coverId, src, fallbacks = [], isbn, size = 'M', className, style }: CoverProps) {
+  const candidates = [publisherCoverUrl(isbn, size), src, coverUrl(coverId, size), ...fallbacks].filter((x): x is string => Boolean(x));
   const candidateKey = candidates.join('|');
   const [index, setIndex] = useState(0);
   useEffect(() => setIndex(0), [candidateKey]);

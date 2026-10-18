@@ -25,6 +25,7 @@ import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
 import { useImpressions } from '../store/impressions';
 import { autoBlurb, generateBlurb, lookupBlurb, useBlurbs } from '../store/blurbs';
 import { useNightShift } from '../store/nightShift';
+import { FORMAT_LABEL, ownedLabel, useOwned, type OwnedFormat } from '../store/owned';
 import { hideBook, useSignals } from '../store/signals';
 import { recallBook, rememberBook, toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
@@ -79,6 +80,9 @@ async function loadBook(id: string, signal: AbortSignal, apiKey: string, country
   return { book: merged, work };
 }
 
+const OWN_FORMATS: OwnedFormat[] = ['print', 'ebook'];
+const NO_FORMATS: OwnedFormat[] = [];
+
 export default function BookDetail() {
   const { id = '' } = useParams();
   const [params, setParams] = useSearchParams();
@@ -89,6 +93,8 @@ export default function BookDetail() {
   const record = useSignals((s) => s.record);
   const restoreSignal = useSignals((s) => s.restore);
   const hidden = useSignals((s) => s.signals.some((x) => x.bookId === id && x.verdict === 'hide'));
+  const owned = useOwned((s) => s.items[id]?.formats) ?? NO_FORMATS;
+  const toggleOwned = useOwned((s) => s.toggle);
   const saved = useWishlist((s) => Boolean(s.items[id]));
   const toggleWish = useWishlist((s) => s.toggle);
   const openRating = useUi((s) => s.openRating);
@@ -260,9 +266,10 @@ export default function BookDetail() {
             coverId={selected?.coverId ?? book.coverId}
             src={selected?.coverUrl ?? (selected ? undefined : book.coverUrl)}
             fallbacks={[...coverFallbacks, ...(book.coverId ? [] : book.coverUrl ? [book.coverUrl] : [])]}
+            isbn={selected?.isbn13 ?? book.isbns?.[0]}
             size="L"
           />
-          <div className="stack" style={{ gap: 8, flex: 1 }}>
+          <div className="stack aside-main" style={{ gap: 8 }}>
             <button
               className={`btn ${saved ? 'btn-soft' : 'btn-primary'} btn-block`}
               onClick={() => {
@@ -276,6 +283,26 @@ export default function BookDetail() {
             <button className="btn btn-block" onClick={() => openRating(book)}>
               {libraryEntry ? `✓ Gelesen${libraryEntry.rating ? ` · ${'★'.repeat(libraryEntry.rating)}` : ''}` : '✓ Schon gelesen'}
             </button>
+            <div className="own-toggle" role="group" aria-label="In meinem Besitz">
+              <span className="small muted">Besitz:</span>
+              {OWN_FORMATS.map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  className={`chip ${owned.includes(f) ? 'on' : ''}`}
+                  aria-pressed={owned.includes(f)}
+                  onClick={() => {
+                    const next = toggleOwned(book, f);
+                    toast(next.length ? `In deinem Besitz: ${ownedLabel(next)}` : 'Nicht mehr in deinem Besitz');
+                  }}
+                >
+                  {FORMAT_LABEL[f]}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Weitere Wege – auf dem Handy als kompakte Zeile unter Cover und Hauptknöpfen */}
+          <div className="aside-more">
             <Link
               className="btn btn-block btn-ghost"
               to={`/entdecken?aehnlich=${encodeURIComponent(book.id)}`}

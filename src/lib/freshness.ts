@@ -4,6 +4,7 @@
  * erholt sich (Halbwertszeit 30 Tage) und darf später wiederkommen. Dazu ein kleiner, täglich
  * wechselnder Zufall, damit die Reihenfolge nicht jeden Tag dieselbe ist.
  */
+import { authorSurname } from './text';
 import type { Book } from './types';
 
 const DAY = 24 * 3600 * 1000;
@@ -56,4 +57,23 @@ export function rotate<T extends { book: Book; score: number }>(items: T[], fati
   return items.map((x) =>
     regular.has(x) ? { ...x, score: x.score - fatigue(x.book.id) * spread + (hash01(`${day}|${x.book.id}`) - 0.5) * jitter * spread } : x,
   );
+}
+
+/**
+ * Abwechslung bei den Autor:innen: höchstens `max` Bücher pro Person vorne, weitere rutschen ans
+ * Ende (bleiben aber erreichbar). Die Reihenfolge sonst bleibt, wie sie ist.
+ */
+export function spreadAuthors<T extends { book: Book }>(items: T[], max = 2, counts = new Map<string, number>()): T[] {
+  const head: T[] = [];
+  const tail: T[] = [];
+  for (const x of items) {
+    const a = authorSurname(x.book.authors[0] ?? '');
+    const n = counts.get(a) ?? 0;
+    if (a && n >= max) tail.push(x);
+    else {
+      if (a) counts.set(a, n + 1);
+      head.push(x);
+    }
+  }
+  return [...head, ...tail];
 }

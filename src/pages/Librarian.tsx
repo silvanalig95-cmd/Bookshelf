@@ -315,7 +315,7 @@ export default function Librarian() {
           {lastBooks.map((b) => (
             <div key={b.id} className="chat-book">
               <Link to={bookPath(b)} onClick={() => rememberBook(b)}>
-                <Cover title={b.title} author={b.authors[0]} coverId={b.coverId} src={b.coverUrl} style={{ width: 70 }} />
+                <Cover title={b.title} author={b.authors[0]} coverId={b.coverId} src={b.coverUrl} isbn={b.isbns?.[0]} style={{ width: 70 }} />
               </Link>
               <div style={{ minWidth: 0 }}>
                 <Link to={bookPath(b)} onClick={() => rememberBook(b)} style={{ color: 'var(--ink)', fontWeight: 650 }}>

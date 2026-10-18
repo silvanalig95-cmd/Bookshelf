@@ -8,13 +8,14 @@ import { Cover } from '../components/Cover';
 import { Empty, ProgressBar } from '../components/Feedback';
 import { StarInput } from '../components/Stars';
 import { fetchGoodreadsShelves, localApiStatus, parseGoodreadsCsv, parseGoodreadsUserId } from '../lib/goodreads';
-import { useLibraryEntries, useProfile } from '../lib/hooks';
+import { useLibraryEntries, useProfile, useReadIndex } from '../lib/hooks';
 import { computeStats, readingPersona } from '../lib/stats';
 import { normalize } from '../lib/text';
 import type { LibraryEntry, Shelf } from '../lib/types';
 import { useEnrichment } from '../store/enrichment';
 import { useLibrary } from '../store/library';
 import { useNightShift } from '../store/nightShift';
+import { ownedLabel, useOwned, useOwnedBooks, type OwnedFormat } from '../store/owned';
 import { useSettings } from '../store/settings';
 import { useSignals } from '../store/signals';
 import { useSync } from '../store/sync';
@@ -22,12 +23,13 @@ import { announceBulkChange } from '../store/syncIntent';
 import { toast, useUi } from '../store/ui';
 import { useWishlist } from '../store/wishlist';
 
-type Tab = 'gelesen' | 'wunsch' | 'merkliste' | 'ausgeblendet' | 'dna' | 'import';
+type Tab = 'gelesen' | 'wunsch' | 'merkliste' | 'besitz' | 'ausgeblendet' | 'dna' | 'import';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'gelesen', label: 'Gelesen' },
   { id: 'wunsch', label: 'Will ich lesen' },
   { id: 'merkliste', label: 'Merkliste' },
+  { id: 'besitz', label: 'Besitz' },
   { id: 'ausgeblendet', label: 'Ausgeblendet' },
   { id: 'dna', label: 'Lese-DNA' },
   { id: 'import', label: '⇅ Goodreads & Daten' },
@@ -39,12 +41,14 @@ export default function Library() {
   const entries = useLibraryEntries();
   const wishCount = useWishlist((s) => Object.keys(s.items).length);
   const hiddenCount = useSignals((s) => s.signals.filter((x) => x.verdict === 'hide').length);
+  const ownedCount = useOwned((s) => Object.keys(s.items).length);
   const enrichment = useEnrichment();
   const pending = entries.filter((e) => e.matchState !== 'matched').length;
   const counts: Record<Tab, number | undefined> = {
     gelesen: entries.filter((e) => e.shelf !== 'to-read').length,
     wunsch: entries.filter((e) => e.shelf === 'to-read').length,
     merkliste: wishCount,
+    besitz: ownedCount,
     ausgeblendet: hiddenCount,
     dna: undefined,
     import: undefined,
@@ -94,6 +98,7 @@ export default function Library() {
       {tab === 'gelesen' && <EntryList shelves={['read', 'currently-reading']} />}
       {tab === 'wunsch' && <EntryList shelves={['to-read']} />}
       {tab === 'merkliste' && <Wishlist />}
+      {tab === 'besitz' && <OwnedList />}
       {tab === 'ausgeblendet' && <HiddenList />}
       {tab === 'dna' && <ReadingDna />}
       {tab === 'import' && <ImportPanel />}
@@ -102,6 +107,41 @@ export default function Library() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/** Bücher in deinem Besitz – gedruckt oder als E-Book, gelesen oder (noch) nicht. */
+function OwnedList() {
+  const items = useOwned((s) => s.items);
+  const books = useOwnedBooks();
+  const readIndex = useReadIndex();
+  const [filter, setFilter] = useState<'all' | 'unread' | OwnedFormat>('all');
+  if (!books.length) {
+    return (
+      <Empty title="Noch nichts im Besitz markiert">
+        <p>Auf jeder Buchseite kannst du unter „Besitze ich als“ angeben, ob du das Buch gedruckt oder als E-Book hast.</p>
+      </Empty>
+    );
+  }
+  const unread = books.filter((b) => !readIndex.has(b));
+  const list = books.filter((b) => (filter === 'all' ? true : filter === 'unread' ? !readIndex.has(b) : items[b.id]?.formats.includes(filter)));
+  const options: Array<[typeof filter, string, number]> = [
+    ['all', 'Alle', books.length],
+    ['unread', 'Noch nicht gelesen', unread.length],
+    ['print', 'Buch', books.filter((b) => items[b.id]?.formats.includes('print')).length],
+    ['ebook', 'E-Book', books.filter((b) => items[b.id]?.formats.includes('ebook')).length],
+  ];
+  return (
+    <div>
+      <div className="chips" style={{ marginBottom: 16 }}>
+        {options.map(([id, label, n]) => (
+          <button key={id} type="button" className={`chip ${filter === id ? 'on' : ''}`} onClick={() => setFilter(id)}>
+            {label} <span className="muted">{n}</span>
+          </button>
+        ))}
+      </div>
+      {list.length ? <BookGrid items={list} origin="Besitz" keepHidden /> : <p className="muted">Keine Bücher in dieser Auswahl.</p>}
+    </div>
+  );
+}
 
 /** Ausgeblendete Bücher – erscheinen nirgends mehr in den Vorschlägen, lassen sich aber wieder hervorholen. */
 function HiddenList() {
@@ -164,6 +204,7 @@ function entryLink(e: LibraryEntry): string {
 
 function EntryList({ shelves }: { shelves: Shelf[] }) {
   const entries = useLibraryEntries();
+  const owned = useOwned((s) => s.items);
   const update = useLibrary((s) => s.update);
   const remove = useLibrary((s) => s.remove);
   const [filter, setFilter] = useState('');
@@ -208,7 +249,7 @@ function EntryList({ shelves }: { shelves: Shelf[] }) {
       <div className="stack" style={{ gap: 8 }}>
         {list.slice(0, limit).map((e) => (
           <div key={e.id} className="edition" style={{ cursor: 'default', gridTemplateColumns: '46px 1fr auto' }}>
-            <Cover title={e.title} author={e.authors[0]} src={e.coverUrl} coverId={e.coverId} size="S" />
+            <Cover title={e.title} author={e.authors[0]} src={e.coverUrl} coverId={e.coverId} isbn={e.isbn13} size="S" />
             <div style={{ minWidth: 0 }}>
               <Link to={entryLink(e)} className="e-title" style={{ color: 'var(--ink)' }}>
                 {e.title}
@@ -221,6 +262,7 @@ function EntryList({ shelves }: { shelves: Shelf[] }) {
               </div>
               <div className="row wrap" style={{ gap: 4, marginTop: 4 }}>
                 {e.matchState === 'unmatched' && <span className="tag gold" title="Kein Open-Library-Werk gefunden – zählt nur eingeschränkt für Empfehlungen">ohne Themen</span>}
+                {e.workKey && owned[e.workKey.replace('/works/', '')] && <span className="tag teal">{ownedLabel(owned[e.workKey.replace('/works/', '')].formats)}</span>}
                 {(e.tags ?? []).slice(0, 4).map((t) => (
                   <span key={t} className="tag">
                     {t}

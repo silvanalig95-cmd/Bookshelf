@@ -1201,13 +1201,37 @@ details.disclosure > .description {
     grid-template-columns: 1fr;
     gap: 24px;
   }
+  /* Cover und Hauptknöpfe nebeneinander, die übrigen Wege als kompakte Zeile darunter –
+     so bleiben Titel und Anna's Archive ohne Scrollen sichtbar */
   .detail-aside {
     position: static;
-    flex-direction: row;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    grid-template-areas: 'cover main' 'more more';
+    align-items: start;
+    gap: 10px 14px;
   }
   .detail-aside .cover {
-    width: 130px;
+    grid-area: cover;
+    width: 120px;
+  }
+  .detail-aside .aside-main {
+    grid-area: main;
+  }
+  .detail-aside .aside-more {
+    grid-area: more;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+  }
+  .detail-aside .aside-more .btn {
+    width: auto;
+    padding: 5px 10px;
+    font-size: 0.82rem;
+    border: 1px solid var(--line);
+  }
+  .own-toggle {
+    justify-content: flex-start;
   }
 }
 
@@ -2492,6 +2516,22 @@ kbd {
 .grid-2 > *,
 .grid-3 > * {
   min-width: 0;
+}
+.aside-more {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.own-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+.own-toggle .chip {
+  padding: 4px 12px;
 }
 .detail-aside .btn {
   white-space: normal;

@@ -2,7 +2,7 @@
  * Geräte-Synchronisation im Browser: verbindet die Daten-Stores mit der SyncEngine und dem
  * Server (/api/sync). Läuft nur, wenn der Server sie anbietet (Docker-Installation).
  *
- * Abgeglichen werden Bibliothek, Merkliste, Swipe-Geschmack und die Einstellungen zu Region,
+ * Abgeglichen werden Bibliothek, Merkliste, Besitz, Swipe-Geschmack und die Einstellungen zu Region,
  * Shop, Sprache, Anna’s Archive, Goodreads-Profil und KI-Modell. API-Schlüssel und Design
  * bleiben auf dem jeweiligen Gerät.
  */
@@ -13,6 +13,7 @@ import type { SyncCollection, SyncMismatch, SyncRequest, SyncResponse } from '..
 import type { LibraryEntry, TasteSignal, WishlistItem } from '../lib/types';
 import { idbStorage } from './idbStorage';
 import { useLibrary } from './library';
+import { useOwned, type OwnedItem } from './owned';
 import { useSettings, type SettingsState } from './settings';
 import { MAX_SIGNALS, useSignals } from './signals';
 import { onBulkChange } from './syncIntent';
@@ -76,6 +77,12 @@ const adapters: SyncAdapter[] = [
       useSignals.setState({ signals });
     },
     accepts: (id, v) => isObj(v) && v.bookId === id && typeof v.at === 'string' && Array.isArray(v.subjects) && Array.isArray(v.authors),
+  },
+  {
+    name: 'owned',
+    read: () => useOwned.getState().items,
+    write: (upserts, deletes) => useOwned.setState({ items: replaceRecords<OwnedItem>(useOwned.getState().items, upserts, deletes) }),
+    accepts: (id, v) => isObj(v) && v.id === id && typeof v.title === 'string' && Array.isArray(v.formats) && Array.isArray(v.authors),
   },
   {
     name: 'settings',
