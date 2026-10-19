@@ -31,6 +31,7 @@ import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { createLocalApiHandler, isLocalRequest } from './localApi.ts';
 import { BlurbStore } from './blurbStore.ts';
+import { BookInfoStore } from './bookInfo.ts';
 import { KnowledgeStore } from './knowledge.ts';
 import { NightShift } from './nightShift.ts';
 import { SyncStore } from './syncStore.ts';
@@ -262,6 +263,7 @@ export function createAppServer(cfg: ServerConfig): Server & { nightShift?: Nigh
   const sync = cfg.dataDir ? new SyncStore(cfg.dataDir) : undefined;
   const blurbs = cfg.dataDir ? new BlurbStore(cfg.dataDir) : undefined;
   const knowledge = cfg.dataDir ? new KnowledgeStore(cfg.dataDir) : undefined;
+  const bookInfo = cfg.dataDir ? new BookInfoStore(cfg.dataDir) : undefined;
   const nightShift =
     sync && blurbs && cfg.dataDir && cfg.geminiApiKey && cfg.nightShift
       ? new NightShift({
@@ -288,6 +290,7 @@ export function createAppServer(cfg: ServerConfig): Server & { nightShift?: Nigh
     blurbs,
     nightShift,
     knowledge,
+    bookInfo,
   });
   const server = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0];
@@ -310,6 +313,7 @@ export function createAppServer(cfg: ServerConfig): Server & { nightShift?: Nigh
     flushStores: () => {
       blurbs?.flush();
       knowledge?.flush();
+      bookInfo?.flush();
     },
   });
 }

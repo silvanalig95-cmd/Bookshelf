@@ -193,6 +193,8 @@ export interface LocalApiStatus {
   sync: boolean;
   /** Angemeldeter Name (null = ohne Login). */
   user: string | null;
+  /** Cover und Verlagstexte aus Apple Books über den Server. */
+  bookInfo?: boolean;
   /** Schlüssel der Ausweich-Kanäle auf dem Server (Mistral, Groq, OpenRouter). */
   llm?: Partial<Record<'mistral' | 'groq' | 'openrouter', boolean>>;
   /** Server merkt sich KI-Kurzbeschreibungen für alle Geräte. */

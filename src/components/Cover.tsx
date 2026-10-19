@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { coverUrl } from '../lib/openLibrary';
+import { serverCoverUrl, useBookInfoServer } from '../store/bookInfo';
 
 // Gedämpfte Einfarbtöne für Bücher ohne Cover
 const PALETTE = ['#5b4a3f', '#3f5550', '#4a4458', '#5a4148', '#3e4a5c', '#5c5238', '#41513f', '#4a4a4a'];
@@ -28,13 +29,19 @@ interface CoverProps {
   fallbacks?: string[];
   /** ISBN-13 der Ausgabe – bei deutschsprachigen Verlagen kommt das Verlags-Cover zuerst. */
   isbn?: string;
+  /** Genau diese Ausgabe zeigen (keine Suche nach Titel, z. B. in der Ausgabenliste). */
+  exact?: boolean;
   size?: 'S' | 'M' | 'L';
   className?: string;
   style?: React.CSSProperties;
 }
 
-export function Cover({ title, author, coverId, src, fallbacks = [], isbn, size = 'M', className, style }: CoverProps) {
-  const candidates = [publisherCoverUrl(isbn, size), src, coverUrl(coverId, size), ...fallbacks].filter((x): x is string => Boolean(x));
+export function Cover({ title, author, coverId, src, fallbacks = [], isbn, exact, size = 'M', className, style }: CoverProps) {
+  // Reihenfolge: Apple Books (scharf, aktuelle Ausgabe; über den eigenen Server), Verlags-Cover der
+  // Nationalbibliothek, dann Open Library
+  const server = useBookInfoServer((s) => s.available);
+  const apple = server && !exact && title ? serverCoverUrl(title, author, size === 'S' ? 160 : size === 'L' ? 800 : 400) : undefined;
+  const candidates = [apple, publisherCoverUrl(isbn, size), src, coverUrl(coverId, size), ...fallbacks].filter((x): x is string => Boolean(x));
   const candidateKey = candidates.join('|');
   const [index, setIndex] = useState(0);
   useEffect(() => setIndex(0), [candidateKey]);

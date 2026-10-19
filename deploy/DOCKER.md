@@ -119,6 +119,8 @@ docker compose -f deploy/docker-compose.yml cp lesekompass:/srv/lesekompass/data
 
 Die Datei-Sicherung in der App gibt es weiterhin: **Bibliothek → Goodreads & Daten → Sicherung herunterladen**. Zurückspielen ersetzt dann den Stand auf allen Geräten.
 
+**Cover und Verlagstexte:** Der Server holt scharfe, aktuelle Cover (bis ~1000 px) und deutsche Verlagstexte aus Apple Books – gedrosselt (Apple erlaubt etwa 20 Abfragen pro Minute) und dauerhaft gemerkt in `data/buchinfo.json`. Neue Bücher zeigen deshalb beim ersten Mal noch das Cover der Nationalbibliothek oder von Open Library, beim nächsten Mal das bessere.
+
 **Wissensspeicher:** Alles, was der Lesekompass über Bücher lernt, bleibt ebenfalls auf dem Server (`data/wissen`): jedes Buch, das dir angezeigt wurde oder das du geöffnet hast, mit Bekanntheit und Schlagwörtern, dazu die von der KI gelernten Schlagwörter (Nachtschicht) und die Kurzbeschreibungen (`data/kurzbeschreibungen.json`). Daraus lernt der Algorithmus laufend nach – etwa, wie bekannt die Vorschläge sein sollen, je nachdem, was du öffnest und was du übergehst. Stand und Download unter **Einstellungen → KI → Wissensspeicher**.
 
 ---

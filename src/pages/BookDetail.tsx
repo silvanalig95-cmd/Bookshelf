@@ -24,6 +24,7 @@ import type { AiConfig } from '../lib/aiPrompts';
 import { aiAvailability, aiConfigFor, type AiAccess } from '../lib/aiStatus';
 import { useImpressions } from '../store/impressions';
 import { autoBlurb, generateBlurb, lookupBlurb, useBlurbs } from '../store/blurbs';
+import { publisherText } from '../store/bookInfo';
 import { reportBook } from '../store/knowledge';
 import { useNightShift } from '../store/nightShift';
 import { FORMAT_LABEL, ownedLabel, useOwned, type OwnedFormat } from '../store/owned';
@@ -188,6 +189,9 @@ export default function BookDetail() {
     [book?.id, loaded?.work?.wikidataId, germanTitle],
   );
 
+  // Deutscher Verlagstext aus Apple Books (über den eigenen Server, falls vorhanden)
+  const publisher = useAsync(async () => (book ? publisherText(germanTitle ?? book.title, book.authors[0]) : undefined), [book?.id, germanTitle]);
+
   const similar = useAsync(
     async (signal) => {
       if (!book) return [];
@@ -241,14 +245,14 @@ export default function BookDetail() {
   const gbGerman = gb?.language === 'ger' ? gb.book.description : undefined;
   const anyDescription = book.description ?? gb?.book.description;
   const descriptionLang = anyDescription ? guessLanguage(anyDescription) : undefined;
-  const germanBlurb = gbGerman ?? (descriptionLang === 'ger' ? anyDescription : undefined);
+  const germanBlurb = gbGerman ?? publisher.data ?? (descriptionLang === 'ger' ? anyDescription : undefined);
   const description = germanBlurb ?? anyDescription;
   // Zählt nur, was vom Inhalt erzählt – eine Einleitung über Verlag und Erfolg reicht nicht
   const wikiContent = wiki.data ? contentSummary(wiki.data) : undefined;
   const germanText = Boolean(wikiContent || germanBlurb);
   // KI nur, wenn es keinen gehaltvollen deutschen Text gibt (Wikipedia, deutscher Klappentext)
-  const rich = richGermanText({ wiki: wiki.data, description: anyDescription, gbGerman });
-  const materialReady = waited || (!wiki.loading && !gbState.loading && !editionsState.loading);
+  const rich = richGermanText({ wiki: wiki.data, description: anyDescription, gbGerman, publisher: publisher.data });
+  const materialReady = waited || (!wiki.loading && !gbState.loading && !editionsState.loading && !publisher.loading);
   const foreignDescription = germanBlurb ? undefined : anyDescription;
   const libraryEntry = readIndex.entryFor(book);
   const subjects = displaySubjects(book.subjects, 8);
@@ -270,6 +274,7 @@ export default function BookDetail() {
             src={selected?.coverUrl ?? (selected ? undefined : book.coverUrl)}
             fallbacks={[...coverFallbacks, ...(book.coverId ? [] : book.coverUrl ? [book.coverUrl] : [])]}
             isbn={selected?.isbn13 ?? book.isbns?.[0]}
+            exact={Boolean(selectedKey)}
             size="L"
           />
           <div className="stack aside-main" style={{ gap: 8 }}>
@@ -438,7 +443,7 @@ export default function BookDetail() {
           {germanBlurb && !wiki.data && (
             <div className="about-block">
               <div className="description">{germanBlurb}</div>
-              <div className="tiny muted">Klappentext: {gbGerman ? 'Google Books' : 'Open Library'}</div>
+              <div className="tiny muted">Klappentext: {gbGerman ? 'Google Books' : publisher.data ? 'Verlag (über Apple Books)' : 'Open Library'}</div>
             </div>
           )}
           {rich && <AiBlurb book={book} description={description} wiki={wikiMaterial(wiki.data)} config={aiConfig} />}

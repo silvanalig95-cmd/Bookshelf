@@ -11,6 +11,7 @@
  *                              reicht auch Anfragen mit einem Schlüssel aus dem Browser weiter
  * - /api/blurbs              → gemerkte KI-Kurzbeschreibungen (für alle Geräte)
  * - /api/nachtschicht        → Stand und Ergebnisse der Nachtschicht (siehe nightShift.ts)
+ * - /api/cover, /api/buchinfo → Cover (Weiterleitung) und Verlagstext aus Apple Books (siehe bookInfo.ts)
  * - /api/wissen              → Wissensspeicher: gesehene/geöffnete Bücher, gelernte Schlagwörter,
  *                              Feinabstimmung des Algorithmus, Download (siehe knowledge.ts)
  * - /api/sync                → gleicht Bibliothek, Merkliste & Co. zwischen Geräten ab
@@ -24,6 +25,7 @@ import { Readable } from 'node:stream';
 import { gzipSync } from 'node:zlib';
 import type { Plugin } from 'vite';
 import type { BlurbStore } from './blurbStore.ts';
+import { artworkUrl, type BookInfoStore } from './bookInfo.ts';
 import { cleanReport, type KnowledgeStore } from './knowledge.ts';
 import type { NightShift } from './nightShift.ts';
 import { SyncInputError, type SyncStore } from './syncStore.ts';
@@ -51,6 +53,8 @@ export interface LocalApiOptions {
   nightShift?: NightShift;
   /** Wissensspeicher: alle Bücher, die vorkamen, und was über sie gelernt wurde. */
   knowledge?: KnowledgeStore;
+  /** Cover in hoher Auflösung und Verlagstexte aus Apple Books (gedrosselt, dauerhaft gemerkt). */
+  bookInfo?: BookInfoStore;
 }
 
 export type LlmProvider = 'mistral' | 'groq' | 'openrouter';
@@ -168,6 +172,7 @@ export function createLocalApiHandler(options: LocalApiOptions) {
           blurbs: Boolean(options.blurbs),
           nightShift: Boolean(options.nightShift),
           knowledge: Boolean(options.knowledge),
+          bookInfo: Boolean(options.bookInfo),
           user: userOf(req),
         });
       }
@@ -183,6 +188,29 @@ export function createLocalApiHandler(options: LocalApiOptions) {
         if (!aiAllowed(req)) return sendJson(res, 403, { error: 'Nur für angemeldete Personen.' });
         void options.nightShift.runNow();
         return sendJson(res, 200, { ok: true });
+      }
+
+      if (url.pathname === '/api/cover' || url.pathname === '/api/buchinfo') {
+        const info = options.bookInfo;
+        const title = (url.searchParams.get('t') ?? '').slice(0, 300);
+        const author = (url.searchParams.get('a') ?? '').slice(0, 150);
+        if (!info || !title) return sendJson(res, 404, { error: 'Nicht verfügbar' });
+        if (url.pathname === '/api/buchinfo') {
+          // Eine einzelne Buchseite darf kurz warten
+          const found = await info.resolve(title, author, { wait: true });
+          return sendJson(res, 200, { artwork: found?.artwork, description: found?.description });
+        }
+        // Buchkarten: sofort, was bekannt ist – sonst wird im Hintergrund nachgeschlagen
+        const found = await info.resolve(title, author);
+        if (!found?.artwork) {
+          res.statusCode = 404;
+          res.setHeader('cache-control', 'no-store');
+          return res.end();
+        }
+        res.statusCode = 302;
+        res.setHeader('location', artworkUrl(found.artwork, Number(url.searchParams.get('w')) || 400));
+        res.setHeader('cache-control', 'private, max-age=604800');
+        return res.end();
       }
 
       if (url.pathname.startsWith('/api/wissen')) {

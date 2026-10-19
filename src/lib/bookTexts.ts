@@ -7,6 +7,7 @@ import { googleBookByIsbn } from './googleBooks';
 import { settle } from './http';
 import { getWork } from './openLibrary';
 import type { Book } from './types';
+import { publisherText } from '../store/bookInfo';
 import { contentSummary, germanWikipediaSummary, guessLanguage, type WikiSummary } from './wikipedia';
 
 export interface BookTexts {
@@ -15,6 +16,8 @@ export interface BookTexts {
   description?: string;
   /** Deutscher Klappentext von Google Books (nur mit eigenem Schlüssel). */
   gbGerman?: string;
+  /** Deutscher Verlagstext aus Apple Books (über den eigenen Server). */
+  publisher?: string;
 }
 
 /** Ab dieser Länge gilt ein deutscher Text als gehaltvoll – etwa drei, vier inhaltliche Sätze. */
@@ -30,6 +33,7 @@ export interface RichText {
 export function richGermanText(t: BookTexts, max = 800): RichText | undefined {
   const content = t.wiki ? contentSummary(t.wiki, max) : undefined;
   if (content && content.text.length >= RICH_GERMAN) return { label: 'Worum es geht', text: content.text, source: 'Wikipedia' };
+  if (t.publisher && t.publisher.length >= RICH_GERMAN) return { label: 'Klappentext', text: t.publisher, source: 'Verlagstext (Apple Books)' };
   const german = t.gbGerman ?? (t.description && guessLanguage(t.description) === 'ger' ? t.description : undefined);
   if (german && german.length >= RICH_GERMAN) return { label: 'Klappentext', text: german, source: t.gbGerman ? 'Google Books' : 'Open Library' };
   return undefined;
@@ -45,13 +49,15 @@ export function wikiMaterial(wiki?: WikiSummary): string | undefined {
 export async function loadBookTexts(book: Book, opts: { googleApiKey?: string; country?: string; signal?: AbortSignal } = {}): Promise<BookTexts> {
   const work = /^OL\d+W$/.test(book.id) ? await settle(getWork(book.id, opts.signal)) : undefined;
   const isbn = book.isbns?.[0];
-  const [wiki, gb] = await Promise.all([
+  const [wiki, gb, publisher] = await Promise.all([
     germanWikipediaSummary({ wikidataId: work?.wikidataId, titles: [book.title], author: book.authors[0] }, opts.signal).catch(() => undefined),
     isbn && opts.googleApiKey ? settle(googleBookByIsbn(isbn, { apiKey: opts.googleApiKey, country: opts.country, signal: opts.signal })) : undefined,
+    publisherText(book.title, book.authors[0]),
   ]);
   return {
     wiki,
     description: work?.description ?? book.description,
     gbGerman: gb?.language === 'ger' ? gb.book.description : undefined,
+    publisher,
   };
 }

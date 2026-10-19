@@ -18,7 +18,7 @@ describe('Lokale API', () => {
   it('meldet ihren Status', async () => {
     const res = fakeRes();
     await createLocalApiHandler({ anthropicApiKey: 'x' })(fakeReq('/api/status'), res, () => undefined);
-    expect(JSON.parse(res.body)).toEqual({ goodreads: true, ai: true, gemini: false, llm: { mistral: false, groq: false, openrouter: false }, sync: false, blurbs: false, nightShift: false, knowledge: false, user: null });
+    expect(JSON.parse(res.body)).toEqual({ goodreads: true, ai: true, gemini: false, llm: { mistral: false, groq: false, openrouter: false }, sync: false, blurbs: false, nightShift: false, knowledge: false, bookInfo: false, user: null });
   });
 
   it('ist nur lokal erreichbar', async () => {
